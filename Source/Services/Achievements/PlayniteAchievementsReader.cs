@@ -31,7 +31,7 @@ namespace AnikiHelper.Services.Achievements
             {
                 if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug("[AnikiHelper][Achievements][LoadSummary][STOP] Game is null or empty.");
+                    global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadSummary][STOP] Game is null or empty.");
                 }
 
                 return null;
@@ -43,7 +43,7 @@ namespace AnikiHelper.Services.Achievements
 
                 if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         "[AnikiHelper][Achievements][LoadSummary][START] " +
                         "Game='" + game.Name + "' Id=" + game.Id +
                         " | DB path='" + (dbPath ?? "null") + "'"
@@ -54,7 +54,7 @@ namespace AnikiHelper.Services.Achievements
                 {
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             "[AnikiHelper][Achievements][LoadSummary][STOP] DB missing. " +
                             "Game='" + game.Name + "'"
                         );
@@ -87,7 +87,7 @@ namespace AnikiHelper.Services.Achievements
                     {
                         if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                         {
-                            logger?.Debug(
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
                                 "[AnikiHelper][Achievements][LoadSummary][STOP] No progress found. " +
                                 "Game='" + game.Name + "'"
                             );
@@ -119,7 +119,7 @@ namespace AnikiHelper.Services.Achievements
 
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             "[AnikiHelper][Achievements][LoadSummary][RESULT] " +
                             "Game='" + game.Name + "'" +
                             " | Unlocked=" + progress.AchievementsUnlocked +
@@ -159,14 +159,14 @@ namespace AnikiHelper.Services.Achievements
 
                 if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug("[AnikiHelper][Achievements][LoadMemories][START] DB path='" + (dbPath ?? "null") + "' MaxItems=" + maxItems);
+                    global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadMemories][START] DB path='" + (dbPath ?? "null") + "' MaxItems=" + maxItems);
                 }
 
                 if (string.IsNullOrWhiteSpace(dbPath) || !File.Exists(dbPath))
                 {
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug("[AnikiHelper][Achievements][LoadMemories][STOP] DB missing.");
+                        global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadMemories][STOP] DB missing.");
                     }
 
                     return result;
@@ -207,7 +207,7 @@ namespace AnikiHelper.Services.Achievements
 
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug("[AnikiHelper][Achievements][LoadMemories][Rows] Rows loaded=" + (rows?.Count ?? 0));
+                        global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadMemories][Rows] Rows loaded=" + (rows?.Count ?? 0));
                     }
 
                     foreach (var row in rows)
@@ -234,7 +234,7 @@ namespace AnikiHelper.Services.Achievements
                         if (string.IsNullOrWhiteSpace(resolvedIconPath) &&
                             AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                         {
-                            logger?.Debug(
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
                                 "[AnikiHelper][Achievements][MissingIcon] " +
                                 "GameId=" + gameId +
                                 " | Title='" + (row.Title ?? "") + "'" +
@@ -264,7 +264,7 @@ namespace AnikiHelper.Services.Achievements
 
             if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
             {
-                logger?.Debug("[AnikiHelper][Achievements][LoadMemories][RESULT] Items returned=" + result.Count);
+                global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadMemories][RESULT] Items returned=" + result.Count);
             }
 
             return result;
@@ -278,7 +278,7 @@ namespace AnikiHelper.Services.Achievements
 
                 if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug("[AnikiHelper][Achievements][LoadRarestAllTime][START] DB path='" + (dbPath ?? "null") + "'");
+                    global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadRarestAllTime][START] DB path='" + (dbPath ?? "null") + "'");
                 }
 
                 if (string.IsNullOrWhiteSpace(dbPath) || !File.Exists(dbPath))
@@ -342,7 +342,7 @@ namespace AnikiHelper.Services.Achievements
                     if (string.IsNullOrWhiteSpace(resolvedIconPath) &&
                         AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             "[AnikiHelper][Achievements][RarestMissingIcon] " +
                             "GameId=" + gameId +
                             " | Title='" + (row.Title ?? "") + "'" +
@@ -365,7 +365,7 @@ namespace AnikiHelper.Services.Achievements
 
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             "[AnikiHelper][Achievements][LoadRarestAllTime][RESULT] " +
                             "Game='" + item.GameName + "'" +
                             " | Title='" + item.Title + "'" +
@@ -394,7 +394,7 @@ namespace AnikiHelper.Services.Achievements
 
                 if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         "[AnikiHelper][Achievements][LoadMemoriesForGame][START] " +
                         "GameId=" + gameId +
                         " | DB path='" + (dbPath ?? "null") + "'"
@@ -405,7 +405,7 @@ namespace AnikiHelper.Services.Achievements
                 {
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug("[AnikiHelper][Achievements][LoadMemoriesForGame][STOP] DB missing. GameId=" + gameId);
+                        global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadMemoriesForGame][STOP] DB missing. GameId=" + gameId);
                     }
 
                     return result;
@@ -441,7 +441,7 @@ namespace AnikiHelper.Services.Achievements
 
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug("[AnikiHelper][Achievements][LoadMemoriesForGame][Rows] GameId=" + gameId + " Rows loaded=" + (rows?.Count ?? 0));
+                        global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadMemoriesForGame][Rows] GameId=" + gameId + " Rows loaded=" + (rows?.Count ?? 0));
                     }
 
                     var game = playniteApi.Database.Games.Get(gameId);
@@ -464,7 +464,7 @@ namespace AnikiHelper.Services.Achievements
                         if (string.IsNullOrWhiteSpace(resolvedIconPath) &&
                             AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                         {
-                            logger?.Debug(
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
                                 "[AnikiHelper][Achievements][GameMissingIcon] " +
                                 "GameId=" + gameId +
                                 " | Title='" + (row.Title ?? "") + "'" +
@@ -494,7 +494,7 @@ namespace AnikiHelper.Services.Achievements
 
             if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
             {
-                logger?.Debug("[AnikiHelper][Achievements][LoadMemoriesForGame][RESULT] GameId=" + gameId + " Items returned=" + result.Count);
+                global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadMemoriesForGame][RESULT] GameId=" + gameId + " Items returned=" + result.Count);
             }
 
             return result;
@@ -517,7 +517,7 @@ namespace AnikiHelper.Services.Achievements
                 {
                     if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                     {
-                        logger?.Debug("[AnikiHelper][Achievements][LoadAchievementsForGame][STOP] DB missing. GameId=" + gameId);
+                        global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadAchievementsForGame][STOP] DB missing. GameId=" + gameId);
                     }
 
                     return result;
@@ -595,7 +595,7 @@ namespace AnikiHelper.Services.Achievements
 
             if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
             {
-                logger?.Debug("[AnikiHelper][Achievements][LoadAchievementsForGame][RESULT] GameId=" + gameId + " Items returned=" + result.Count);
+                global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][Achievements][LoadAchievementsForGame][RESULT] GameId=" + gameId + " Items returned=" + result.Count);
             }
 
             return result;

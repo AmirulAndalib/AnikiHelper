@@ -22,7 +22,7 @@ namespace AnikiHelper.Services
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -37,7 +37,7 @@ namespace AnikiHelper.Services
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -74,11 +74,7 @@ namespace AnikiHelper.Services
             MigrateLegacySteamStoreFolders(pluginUserDataPath);
         }
 
-        /// <summary>
-        /// Resolves Steam app names in one StoreBrowse request.
-        /// This avoids sending one /api/appdetails request per wishlist item and keeps
-        /// card titles usable even when Steam temporarily rate-limits appdetails.
-        /// </summary>
+        /// <summary>Resolves Steam app names in one StoreBrowse request.</summary>
         public async Task<Dictionary<int, string>> GetStoreItemNamesAsync(
             IEnumerable<int> appIds,
             string language,

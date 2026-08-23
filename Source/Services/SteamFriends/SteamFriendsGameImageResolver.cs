@@ -102,7 +102,7 @@ namespace AnikiHelper.Services.SteamFriends
                 }
                 catch (Exception ex)
                 {
-                    try { logger.Debug(ex, $"[AnikiHelper][SteamFriends] Game image background resolve failed for AppId={appId}."); } catch { }
+                    try { global::AnikiHelper.AnikiLog.Debug(logger, ex, $"[AnikiHelper][SteamFriends] Game image background resolve failed for AppId={appId}."); } catch { }
                 }
                 finally
                 {

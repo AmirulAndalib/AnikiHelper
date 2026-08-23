@@ -50,6 +50,43 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="AnikiThemeSettingsDependencyNoteStyle"
+       TargetType="TextBlock"
+       BasedOn="{StaticResource AnikiThemeSettingsTextMiniStyle}">
+
+            <Setter Property="Text"
+            Value="{Binding DependencyMessage}"/>
+
+            <Setter Property="Foreground"
+            Value="{DynamicResource TextHighlightBrush}"/>
+
+            <Setter Property="FontSize"
+            Value="14"/>
+
+            <Setter Property="FontWeight"
+            Value="SemiBold"/>
+
+            <Setter Property="Margin"
+            Value="18,4,20,0"/>
+
+            <Setter Property="Opacity"
+            Value="0.9"/>
+
+            <Setter Property="TextWrapping"
+            Value="Wrap"/>
+
+            <Setter Property="Visibility"
+            Value="Collapsed"/>
+
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsEnabled}"
+                     Value="False">
+                    <Setter Property="Visibility"
+                    Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="AnikiThemeSettingsRestartNoteStyle"
                TargetType="TextBlock"
                BasedOn="{StaticResource AnikiThemeSettingsTextMiniStyle}">
@@ -67,7 +104,18 @@
         ========================================================== -->
 
         <DataTemplate DataType="{x:Type ats:AnikiThemeVariable}">
-            <Grid>
+            <Grid IsEnabled="{Binding IsEnabled}">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Opacity" Value="1"/>
+
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsEnabled}" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
                 <!-- SECTION HEADER -->
                 <Grid IsHitTestVisible="False"
                       Focusable="False"
@@ -162,6 +210,8 @@
 
                                 <TextBlock Style="{StaticResource AnikiThemeSettingsOptionTitleStyle}"/>
 
+                                <TextBlock Style="{StaticResource AnikiThemeSettingsDependencyNoteStyle}"/>
+
                                 <TextBlock Style="{StaticResource AnikiThemeSettingsOptionDescriptionStyle}"/>
 
                                 <TextBlock Style="{StaticResource AnikiThemeSettingsRestartNoteStyle}"/>
@@ -205,6 +255,7 @@
                     <StackPanel Grid.Column="0"
                                 VerticalAlignment="Center">
                         <TextBlock Style="{StaticResource AnikiThemeSettingsOptionTitleStyle}"/>
+                        <TextBlock Style="{StaticResource AnikiThemeSettingsDependencyNoteStyle}"/>
                         <TextBlock Style="{StaticResource AnikiThemeSettingsOptionDescriptionStyle}"/>
                         <TextBlock Style="{StaticResource AnikiThemeSettingsRestartNoteStyle}"/>
                     </StackPanel>
@@ -265,6 +316,7 @@
                                 Margin="0,0,30,0">
 
                         <TextBlock Style="{StaticResource AnikiThemeSettingsOptionTitleStyle}"/>
+                        <TextBlock Style="{StaticResource AnikiThemeSettingsDependencyNoteStyle}"/>
                         <TextBlock Style="{StaticResource AnikiThemeSettingsOptionDescriptionStyle}"/>
                         <TextBlock Style="{StaticResource AnikiThemeSettingsRestartNoteStyle}"/>
                     </StackPanel>
@@ -327,6 +379,7 @@
                 <StackPanel Grid.Column="0"
                             VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource AnikiThemeSettingsOptionTitleStyle}"/>
+                    <TextBlock Style="{StaticResource AnikiThemeSettingsDependencyNoteStyle}"/>
                     <TextBlock Style="{StaticResource AnikiThemeSettingsOptionDescriptionStyle}"/>
                     <TextBlock Style="{StaticResource AnikiThemeSettingsRestartNoteStyle}"/>
                 </StackPanel>

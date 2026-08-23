@@ -74,6 +74,7 @@ namespace AnikiHelper.Services.FirstSetup
         private bool isApplying;
         private bool isClosing;
         private bool isAddonInstallFlowActive;
+        private bool isScreenshotProviderChoiceOpen;
         private bool addonInstallNoticeShown;
         private readonly List<string> queuedAddonIds = new List<string>();
         private AnikiMediaProviderMode? queuedScreenshotProviderMode;
@@ -129,6 +130,9 @@ namespace AnikiHelper.Services.FirstSetup
             InstallCustomFadeAnimationCommand = new RelayCommand(ToggleCustomFadeAnimationInstall);
             InstallExtraMetadataCommand = new RelayCommand(ToggleExtraMetadataInstall);
             ChooseAndInstallScreenshotProviderCommand = new RelayCommand(ChooseOrCancelScreenshotProviderInstall);
+            ChooseScreenshotsVisualizerCommand = new RelayCommand(ChooseScreenshotsVisualizer);
+            ChooseScreenshotUtilitiesCommand = new RelayCommand(ChooseScreenshotUtilities);
+            CancelScreenshotProviderChoiceCommand = new RelayCommand(CancelScreenshotProviderChoice);
             InstallScreenshotUtilitiesLocalProviderCommand = new RelayCommand(ToggleScreenshotUtilitiesLocalProviderInstall);
             InstallCurrentPendingAddonCommand = new RelayCommand(InstallCurrentPendingAddon);
             ContinuePendingAddonInstallCommand = new RelayCommand(ContinuePendingAddonInstall);
@@ -210,6 +214,15 @@ namespace AnikiHelper.Services.FirstSetup
         public ICommand ChooseAndInstallScreenshotProviderCommand { get; }
 
         [DontSerialize]
+        public ICommand ChooseScreenshotsVisualizerCommand { get; }
+
+        [DontSerialize]
+        public ICommand ChooseScreenshotUtilitiesCommand { get; }
+
+        [DontSerialize]
+        public ICommand CancelScreenshotProviderChoiceCommand { get; }
+
+        [DontSerialize]
         public ICommand InstallScreenshotUtilitiesLocalProviderCommand { get; }
 
         [DontSerialize]
@@ -262,7 +275,24 @@ namespace AnikiHelper.Services.FirstSetup
         }
 
         [DontSerialize]
-        public bool CanInteract => !IsApplying && !IsAddonInstallFlowActive && !IsClosing;
+        public bool CanInteract =>
+            !IsApplying &&
+            !IsAddonInstallFlowActive &&
+            !IsScreenshotProviderChoiceOpen &&
+            !IsClosing;
+
+        [DontSerialize]
+        public bool IsScreenshotProviderChoiceOpen
+        {
+            get => isScreenshotProviderChoiceOpen;
+            private set
+            {
+                if (SetValue(ref isScreenshotProviderChoiceOpen, value))
+                {
+                    OnPropertyChanged(nameof(CanInteract));
+                }
+            }
+        }
 
         [DontSerialize]
         public bool IsAddonInstallFlowActive
@@ -900,6 +930,12 @@ namespace AnikiHelper.Services.FirstSetup
             if (!IsActive)
             {
                 return false;
+            }
+
+            if (IsScreenshotProviderChoiceOpen)
+            {
+                CancelScreenshotProviderChoice();
+                return true;
             }
 
             if (IsApplying || IsAddonInstallFlowActive)
@@ -1705,57 +1741,70 @@ namespace AnikiHelper.Services.FirstSetup
                 RemoveQueuedAddon(ScreenshotUtilitiesAddonId);
                 RemoveQueuedAddon(ScreenshotUtilitiesLocalProviderAddonId);
                 queuedScreenshotProviderMode = null;
+                IsScreenshotProviderChoiceOpen = false;
                 NotifyQueuedAddonStateChanged();
                 return;
             }
 
-            if (playniteApi?.Dialogs == null)
+            // Do not open Playnite's generic multi-option MessageBox here.
+            // In Fullscreen onboarding it can leave controller focus on the wizard behind it.
+            // Keep the choice inside FirstSetupWindow instead so native controller navigation,
+            // focus ownership and B handling all remain in the same window.
+            IsScreenshotProviderChoiceOpen = true;
+            plugin?.FocusFirstSetupControl("FirstSetupScreenshotVisualizerChoiceButton");
+        }
+
+        private void ChooseScreenshotsVisualizer()
+        {
+            if (!IsScreenshotProviderChoiceOpen)
             {
                 return;
             }
 
-            var visualizerOption = new MessageBoxOption(
-                Loc("LOCFirstSetupScreenshotChoiceVisualizer", "Screenshots Visualizer"));
-            var utilitiesOption = new MessageBoxOption(
-                Loc("LOCFirstSetupScreenshotChoiceUtilities", "Screenshot Utilities"));
-            var cancelOption = new MessageBoxOption(
-                Loc("LOCFirstSetupScreenshotChoiceCancel", "Cancel"));
+            RemoveQueuedAddon(ScreenshotUtilitiesAddonId);
+            RemoveQueuedAddon(ScreenshotUtilitiesLocalProviderAddonId);
+            AddQueuedAddon(ScreenshotsVisualizerAddonId);
 
-            var result = playniteApi.Dialogs.ShowMessage(
-                Loc(
-                    "LOCFirstSetupScreenshotChoiceMessage",
-                    "Choose the screenshot provider you want to install. Only one provider is required."),
-                Loc("LOCFirstSetupScreenshotChoiceTitle", "Install a screenshot provider"),
-                MessageBoxImage.Information,
-                new List<MessageBoxOption>
-                {
-                    visualizerOption,
-                    utilitiesOption,
-                    cancelOption
-                });
-
-            if (result == visualizerOption)
-            {
-                AddQueuedAddon(ScreenshotsVisualizerAddonId);
-                queuedScreenshotProviderMode = AnikiMediaProviderMode.ScreenshotsVisualizer;
-                ShowAddonScheduledMessageOnce();
-            }
-            else if (result == utilitiesOption)
-            {
-                AddQueuedAddon(ScreenshotUtilitiesAddonId);
-
-                // Screenshot Utilities needs its Local Provider before Aniki Helper can read
-                // local captures. Keep it as a separate item in the installation sequence.
-                if (!ScreenshotUtilitiesLocalProviderInstalled)
-                {
-                    AddQueuedAddon(ScreenshotUtilitiesLocalProviderAddonId);
-                }
-
-                queuedScreenshotProviderMode = AnikiMediaProviderMode.ScreenshotUtilitiesLocal;
-                ShowAddonScheduledMessageOnce();
-            }
-
+            queuedScreenshotProviderMode = AnikiMediaProviderMode.ScreenshotsVisualizer;
+            IsScreenshotProviderChoiceOpen = false;
             NotifyQueuedAddonStateChanged();
+
+            plugin?.FocusFirstSetupControl("FirstSetupScreenshotProviderButton");
+        }
+
+        private void ChooseScreenshotUtilities()
+        {
+            if (!IsScreenshotProviderChoiceOpen)
+            {
+                return;
+            }
+
+            RemoveQueuedAddon(ScreenshotsVisualizerAddonId);
+            AddQueuedAddon(ScreenshotUtilitiesAddonId);
+
+            // Screenshot Utilities needs its Local Provider before Aniki Helper can read
+            // local captures. Keep it as a separate item in the installation sequence.
+            if (!ScreenshotUtilitiesLocalProviderInstalled)
+            {
+                AddQueuedAddon(ScreenshotUtilitiesLocalProviderAddonId);
+            }
+
+            queuedScreenshotProviderMode = AnikiMediaProviderMode.ScreenshotUtilitiesLocal;
+            IsScreenshotProviderChoiceOpen = false;
+            NotifyQueuedAddonStateChanged();
+
+            plugin?.FocusFirstSetupControl("FirstSetupScreenshotProviderButton");
+        }
+
+        private void CancelScreenshotProviderChoice()
+        {
+            if (!IsScreenshotProviderChoiceOpen)
+            {
+                return;
+            }
+
+            IsScreenshotProviderChoiceOpen = false;
+            plugin?.FocusFirstSetupControl("FirstSetupScreenshotProviderButton");
         }
 
         private void ToggleQueuedAddon(string addonId)
@@ -1803,6 +1852,7 @@ namespace AnikiHelper.Services.FirstSetup
         {
             queuedAddonIds.Clear();
             queuedScreenshotProviderMode = null;
+            IsScreenshotProviderChoiceOpen = false;
             addonInstallNoticeShown = false;
             NotifyQueuedAddonStateChanged();
         }

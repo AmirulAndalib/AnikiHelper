@@ -20,7 +20,7 @@ namespace AnikiHelper
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -35,7 +35,7 @@ namespace AnikiHelper
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -83,10 +83,7 @@ namespace AnikiHelper
                 return false;
             }
 
-            // IMPORTANT:
-            // Event sounds use the fullscreen InterfaceVolume. They should not be blocked by
-            // Playnite's background music mute flag, otherwise LuckyDay.wav / Unlock.wav can
-            // silently fail when the user only muted background music.
+            // Event sounds use InterfaceVolume, independently from background-music mute.
             return true;
         }
 

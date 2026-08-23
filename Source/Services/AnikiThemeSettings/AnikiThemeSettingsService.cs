@@ -1,5 +1,6 @@
 ﻿using Playnite.SDK;
 using Playnite.SDK.Data;
+using Playnite.SDK.Models;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -7,8 +8,11 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace AnikiHelper.Services.AnikiThemeSettings
@@ -25,7 +29,7 @@ namespace AnikiHelper.Services.AnikiThemeSettings
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -40,7 +44,7 @@ namespace AnikiHelper.Services.AnikiThemeSettings
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -70,6 +74,47 @@ namespace AnikiHelper.Services.AnikiThemeSettings
         private readonly string pluginUserDataPath;
         private readonly string themeSettingsFilePath;
 
+        // Focused-cover styles are applied directly to PART_ListGameItems by the Helper.
+        // Playnite assigns ItemContainerStyle as a local value, so a Setter/Trigger on the
+        // ListBox style cannot reliably replace it. Keeping the switch here means the OFF
+        // path uses the exact original ListGameItemStyle with zero per-card feature binding.
+        private string pendingFocusedCoverItemStyleKey = "ListGameItemStyle";
+        private Window focusedCoverStyleHookedWindow;
+
+        // Focused-cover trailer overlay: one global visual outside the native game-list
+        // ScrollViewer. Nothing polls the visual tree; the two one-shot timers only run
+        // after a game selection has remained stable long enough.
+        private readonly DispatcherTimer focusedCoverOverlayDelayTimer;
+        private readonly DispatcherTimer focusedCoverOverlayMediaDelayTimer;
+        private Game pendingFocusedCoverOverlayGame;
+        private Guid focusedCoverOverlayActiveGameId = Guid.Empty;
+        private bool focusedCoverOverlayEnabled;
+        private bool focusedCoverOverlayTrailerMode;
+        private bool focusedCoverOverlayWaitForSelectionChange;
+        private Guid focusedCoverOverlaySuppressedGameId = Guid.Empty;
+        private Window focusedCoverOverlayHookedWindow;
+        private string focusedCoverOverlayVideoPath;
+        private string focusedCoverOverlayBackgroundPath;
+        private string focusedCoverOverlayLogoPath;
+
+        // Cached once per fullscreen visual tree. Normal controller navigation does not scan it.
+        private Grid focusedCoverOverlayHost;
+        private ListBox focusedCoverOverlayGameList;
+        private Canvas focusedCoverOverlayLayer;
+        private Grid focusedCoverOverlayPanel;
+        private Border focusedCoverOverlayCover;
+        private Border focusedCoverOverlaySilver;
+        private Border focusedCoverOverlayShade;
+        private Image focusedCoverOverlayBackground;
+        private MediaElement focusedCoverOverlayMedia;
+        private MediaElement focusedCoverOverlayEventMedia;
+        private Guid focusedCoverOverlayMediaRequestGameId = Guid.Empty;
+        private Image focusedCoverOverlayLogo;
+        private Border focusedCoverOverlayEdge;
+        private Border focusedCoverOverlaySweep;
+        private ListBox focusedCoverOverlayObservedGameList;
+        private System.Windows.Controls.Primitives.ToggleButton focusedCoverOverlayObservedViewToggle;
+
         public AnikiThemeSettingsService(
             IPlayniteAPI playniteApi,
             AnikiHelperSettings settings,
@@ -81,6 +126,18 @@ namespace AnikiHelper.Services.AnikiThemeSettings
             this.logger = logger;
             this.pluginUserDataPath = pluginUserDataPath;
             themeSettingsFilePath = Path.Combine(pluginUserDataPath, "ThemeSettings.json");
+
+            focusedCoverOverlayDelayTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(900)
+            };
+            focusedCoverOverlayDelayTimer.Tick += OnFocusedCoverOverlayDelayElapsed;
+
+            focusedCoverOverlayMediaDelayTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(110)
+            };
+            focusedCoverOverlayMediaDelayTimer.Tick += OnFocusedCoverOverlayMediaDelayElapsed;
         }
 
         public bool ShouldShowInitialSetup =>
@@ -154,7 +211,8 @@ namespace AnikiHelper.Services.AnikiThemeSettings
 
                 LoadThemeSettingsStorage();
 
-                var storageChanged = SanitizeThemeSettingsStorage();
+                var storageChanged = MigrateLegacyMainBackgroundOptions();
+                storageChanged = SanitizeThemeSettingsStorage() || storageChanged;
                 storageChanged = ApplyOptionDependenciesToStorage() || storageChanged;
 
                 if (storageChanged)
@@ -205,10 +263,1498 @@ namespace AnikiHelper.Services.AnikiThemeSettings
                 LoadKonamiModeResourceOverride();
 
                 settings.Options.Update(optionValues);
+
+                ScheduleFocusedCoverItemStyleApply(optionValues);
             }
             catch (Exception ex)
             {
                 logger?.Warn(ex, "[AnikiHelper] Failed to apply Aniki Theme Settings.");
+            }
+        }
+
+        private void ScheduleFocusedCoverItemStyleApply(Dictionary<string, object> optionValues)
+        {
+            try
+            {
+                // Older themes that do not expose these options must remain completely untouched.
+                if (currentFile?.Variables == null ||
+                    (!currentFile.Variables.ContainsKey("MicroTrailerOnFocusedCover") &&
+                     !currentFile.Variables.ContainsKey("BackgroundOnFocusedCover")))
+                {
+                    return;
+                }
+
+                var microTrailerEnabled = optionValues != null &&
+                                          optionValues.TryGetValue("MicroTrailerOnFocusedCover", out var microTrailerValue) &&
+                                          ToBool(microTrailerValue);
+                var backgroundEnabled = optionValues != null &&
+                                        optionValues.TryGetValue("BackgroundOnFocusedCover", out var backgroundValue) &&
+                                        ToBool(backgroundValue);
+                var performanceModeEnabled = optionValues != null &&
+                                             optionValues.TryGetValue("PerformanceMode", out var performanceModeValue) &&
+                                             ToBool(performanceModeValue);
+
+                var globalFocusedCoverOverlayEnabled =
+                    !performanceModeEnabled && (microTrailerEnabled || backgroundEnabled);
+                var trailerModeEnabled = !performanceModeEnabled && microTrailerEnabled;
+
+                // Both focused-cover modes now use the same single global overlay. Keep every
+                // realized game card on the native style so there is no premium visual tree per card.
+                pendingFocusedCoverItemStyleKey = "ListGameItemStyle";
+
+                SetFocusedCoverOverlayEnabled(globalFocusedCoverOverlayEnabled, trailerModeEnabled);
+
+                var app = Application.Current;
+                var dispatcher = app?.Dispatcher;
+                if (dispatcher == null)
+                {
+                    return;
+                }
+
+                // Run after the current settings/resource update has completed. If the fullscreen
+                // visual tree is still being created, a second ContextIdle pass catches it.
+                dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+                {
+                    if (TryApplyFocusedCoverItemStyle(pendingFocusedCoverItemStyleKey))
+                    {
+                        return;
+                    }
+
+                    var window = Application.Current?.MainWindow;
+                    if (window != null && !window.IsLoaded)
+                    {
+                        HookFocusedCoverStyleWindowLoaded(window);
+                        return;
+                    }
+
+                    dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+                    {
+                        TryApplyFocusedCoverItemStyle(pendingFocusedCoverItemStyleKey);
+                    }));
+                }));
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper] Failed to schedule focused-cover item style update.");
+            }
+        }
+
+        private void HookFocusedCoverStyleWindowLoaded(Window window)
+        {
+            try
+            {
+                if (window == null)
+                {
+                    return;
+                }
+
+                if (focusedCoverStyleHookedWindow != null &&
+                    !ReferenceEquals(focusedCoverStyleHookedWindow, window))
+                {
+                    focusedCoverStyleHookedWindow.Loaded -= OnFocusedCoverStyleWindowLoaded;
+                }
+
+                focusedCoverStyleHookedWindow = window;
+                window.Loaded -= OnFocusedCoverStyleWindowLoaded;
+                window.Loaded += OnFocusedCoverStyleWindowLoaded;
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverStyle] Failed to hook MainWindow.Loaded.");
+            }
+        }
+
+        private void OnFocusedCoverStyleWindowLoaded(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is Window window)
+                {
+                    window.Loaded -= OnFocusedCoverStyleWindowLoaded;
+                }
+
+                focusedCoverStyleHookedWindow = null;
+
+                Application.Current?.Dispatcher?.BeginInvoke(
+                    DispatcherPriority.ContextIdle,
+                    new Action(() => TryApplyFocusedCoverItemStyle(pendingFocusedCoverItemStyleKey)));
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverStyle] Failed after MainWindow.Loaded.");
+            }
+        }
+
+        private bool TryApplyFocusedCoverItemStyle(string styleKey)
+        {
+            try
+            {
+                var app = Application.Current;
+                var window = app?.MainWindow;
+                if (window == null || string.IsNullOrWhiteSpace(styleKey))
+                {
+                    return false;
+                }
+
+                var gameList = FindVisualChildByName<ListBox>(window, "PART_ListGameItems");
+                if (gameList == null)
+                {
+                    return false;
+                }
+
+                var style = window.TryFindResource(styleKey) as Style ??
+                            app.TryFindResource(styleKey) as Style;
+                if (style == null)
+                {
+                    DebugLog($"[AnikiHelper][FocusedCoverStyle] Resource not found: {styleKey}");
+                    return false;
+                }
+
+                if (!ReferenceEquals(gameList.ItemContainerStyle, style))
+                {
+                    // Direct local assignment intentionally wins over the ItemContainerStyle value
+                    // Playnite applies to its native game list. This happens only when settings are
+                    // applied, never during normal cover navigation.
+                    gameList.ItemContainerStyle = style;
+                    DebugLog($"[AnikiHelper][FocusedCoverStyle] Applied {styleKey} to PART_ListGameItems.");
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, $"[AnikiHelper][FocusedCoverStyle] Failed to apply style {styleKey}.");
+                return false;
+            }
+        }
+
+        private static T FindVisualChildByName<T>(DependencyObject root, string name)
+            where T : FrameworkElement
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            if (root is T rootMatch &&
+                string.Equals(rootMatch.Name, name, StringComparison.Ordinal))
+            {
+                return rootMatch;
+            }
+
+            int childCount;
+            try
+            {
+                childCount = VisualTreeHelper.GetChildrenCount(root);
+            }
+            catch
+            {
+                return null;
+            }
+
+            for (var i = 0; i < childCount; i++)
+            {
+                DependencyObject child;
+                try
+                {
+                    child = VisualTreeHelper.GetChild(root, i);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                var match = FindVisualChildByName<T>(child, name);
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+
+            return null;
+        }
+
+        private void SetFocusedCoverOverlayEnabled(bool enabled, bool trailerMode)
+        {
+            var modeChanged = focusedCoverOverlayTrailerMode != trailerMode;
+            focusedCoverOverlayEnabled = enabled;
+            focusedCoverOverlayTrailerMode = enabled && trailerMode;
+
+            if (!enabled)
+            {
+                focusedCoverOverlayWaitForSelectionChange = false;
+                focusedCoverOverlaySuppressedGameId = Guid.Empty;
+                CancelFocusedCoverOverlay(true);
+                return;
+            }
+
+            if (modeChanged)
+            {
+                CancelFocusedCoverOverlay(false);
+            }
+
+            try
+            {
+                var selectedGame = playniteApi?.MainView?.SelectedGames?.FirstOrDefault();
+                NotifyFocusedCoverGameSelected(selectedGame);
+            }
+            catch
+            {
+                // Selection events will retry naturally.
+            }
+        }
+
+        public void NotifyFocusedCoverGameSelected(Game game)
+        {
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher != null && !dispatcher.CheckAccess())
+                {
+                    dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => NotifyFocusedCoverGameSelected(game)));
+                    return;
+                }
+
+                focusedCoverOverlayDelayTimer?.Stop();
+                focusedCoverOverlayMediaDelayTimer?.Stop();
+                HideFocusedCoverOverlayVisual();
+                pendingFocusedCoverOverlayGame = game;
+
+                if (!focusedCoverOverlayEnabled ||
+                    game == null ||
+                    playniteApi?.ApplicationInfo?.Mode != ApplicationMode.Fullscreen)
+                {
+                    return;
+                }
+
+                if (focusedCoverOverlayWaitForSelectionChange)
+                {
+                    if (game.Id == focusedCoverOverlaySuppressedGameId)
+                    {
+                        pendingFocusedCoverOverlayGame = null;
+                        return;
+                    }
+
+                    focusedCoverOverlayWaitForSelectionChange = false;
+                    focusedCoverOverlaySuppressedGameId = Guid.Empty;
+                }
+
+                focusedCoverOverlayDelayTimer.Start();
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverOverlay] Failed to schedule selected game.");
+            }
+        }
+
+        public void NotifyFocusedCoverViewChanged(bool isDetailsView)
+        {
+            try
+            {
+                CancelFocusedCoverOverlay(false);
+
+                if (!focusedCoverOverlayEnabled)
+                {
+                    return;
+                }
+
+                if (isDetailsView)
+                {
+                    var selectedGame = playniteApi?.MainView?.SelectedGames?.FirstOrDefault();
+                    focusedCoverOverlaySuppressedGameId = selectedGame?.Id ?? Guid.Empty;
+                    focusedCoverOverlayWaitForSelectionChange = focusedCoverOverlaySuppressedGameId != Guid.Empty;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverOverlay] Failed to react to fullscreen view change.");
+            }
+        }
+
+        public void StopFocusedCoverOverlay()
+        {
+            try
+            {
+                focusedCoverOverlayEnabled = false;
+                focusedCoverOverlayTrailerMode = false;
+                focusedCoverOverlayWaitForSelectionChange = false;
+                focusedCoverOverlaySuppressedGameId = Guid.Empty;
+                CancelFocusedCoverOverlay(true);
+            }
+            catch
+            {
+            }
+        }
+
+        private void CancelFocusedCoverOverlay(bool unhookWindow)
+        {
+            try { focusedCoverOverlayDelayTimer?.Stop(); } catch { }
+            try { focusedCoverOverlayMediaDelayTimer?.Stop(); } catch { }
+
+            pendingFocusedCoverOverlayGame = null;
+            focusedCoverOverlayActiveGameId = Guid.Empty;
+            focusedCoverOverlayVideoPath = null;
+            focusedCoverOverlayBackgroundPath = null;
+            focusedCoverOverlayLogoPath = null;
+
+            HideFocusedCoverOverlayVisual();
+
+            if (unhookWindow && focusedCoverOverlayHookedWindow != null)
+            {
+                try
+                {
+                    focusedCoverOverlayHookedWindow.Deactivated -= OnFocusedCoverOverlayWindowDeactivated;
+                    focusedCoverOverlayHookedWindow.Activated -= OnFocusedCoverOverlayWindowActivated;
+                }
+                catch { }
+
+                focusedCoverOverlayHookedWindow = null;
+            }
+        }
+
+        private Window ResolveFocusedCoverOverlayWindow()
+        {
+            try
+            {
+                var app = Application.Current;
+                if (app == null)
+                {
+                    return null;
+                }
+
+                // Fast path after the first successful resolve: no visual-tree scan.
+                if (focusedCoverOverlayHookedWindow != null &&
+                    focusedCoverOverlayHookedWindow.IsLoaded &&
+                    focusedCoverOverlayGameList != null &&
+                    focusedCoverOverlayLayer != null)
+                {
+                    return focusedCoverOverlayHookedWindow;
+                }
+
+                var mainWindow = app.MainWindow;
+                if (IsFocusedCoverOverlayWindow(mainWindow))
+                {
+                    return mainWindow;
+                }
+
+                foreach (Window candidate in app.Windows)
+                {
+                    if (candidate == null || ReferenceEquals(candidate, mainWindow))
+                    {
+                        continue;
+                    }
+
+                    if (IsFocusedCoverOverlayWindow(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverOverlay] Failed to resolve fullscreen window.");
+            }
+
+            return null;
+        }
+
+        private bool IsFocusedCoverOverlayWindow(Window window)
+        {
+            if (window == null || !window.IsLoaded)
+            {
+                return false;
+            }
+
+            try
+            {
+                // Require both controls so a desktop/secondary Playnite window cannot be selected
+                // accidentally. This scan only happens after focus has been stable for 900 ms.
+                return FindVisualChildByName<ListBox>(window, "PART_ListGameItems") != null &&
+                       FindVisualChildByName<Canvas>(window, "AnikiFocusedCoverOverlayLayer") != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void HookFocusedCoverOverlayWindow(Window window)
+        {
+            if (window == null || ReferenceEquals(focusedCoverOverlayHookedWindow, window))
+            {
+                return;
+            }
+
+            if (focusedCoverOverlayHookedWindow != null)
+            {
+                try
+                {
+                    focusedCoverOverlayHookedWindow.Deactivated -= OnFocusedCoverOverlayWindowDeactivated;
+                    focusedCoverOverlayHookedWindow.Activated -= OnFocusedCoverOverlayWindowActivated;
+                }
+                catch { }
+            }
+
+            ClearFocusedCoverOverlayVisualCache();
+            focusedCoverOverlayHookedWindow = window;
+            window.Deactivated += OnFocusedCoverOverlayWindowDeactivated;
+            window.Activated += OnFocusedCoverOverlayWindowActivated;
+        }
+
+        private void OnFocusedCoverOverlayWindowDeactivated(object sender, EventArgs e)
+        {
+            CancelFocusedCoverOverlay(false);
+        }
+
+        private void OnFocusedCoverOverlayWindowActivated(object sender, EventArgs e)
+        {
+            if (!focusedCoverOverlayEnabled)
+            {
+                return;
+            }
+
+            try
+            {
+                var selectedGame = playniteApi?.MainView?.SelectedGames?.FirstOrDefault();
+                NotifyFocusedCoverGameSelected(selectedGame);
+            }
+            catch
+            {
+            }
+        }
+
+        private void HookFocusedCoverOverlayLayoutEvents(Window window)
+        {
+            try
+            {
+                var gameList = focusedCoverOverlayGameList;
+                if (!ReferenceEquals(focusedCoverOverlayObservedGameList, gameList))
+                {
+                    if (focusedCoverOverlayObservedGameList != null)
+                    {
+                        focusedCoverOverlayObservedGameList.IsVisibleChanged -= OnFocusedCoverOverlayGameListVisibilityChanged;
+                        focusedCoverOverlayObservedGameList.Unloaded -= OnFocusedCoverOverlayGameListUnloaded;
+                        focusedCoverOverlayObservedGameList.IsKeyboardFocusWithinChanged -= OnFocusedCoverOverlayGameListKeyboardFocusWithinChanged;
+                    }
+
+                    focusedCoverOverlayObservedGameList = gameList;
+                    if (focusedCoverOverlayObservedGameList != null)
+                    {
+                        focusedCoverOverlayObservedGameList.IsVisibleChanged += OnFocusedCoverOverlayGameListVisibilityChanged;
+                        focusedCoverOverlayObservedGameList.Unloaded += OnFocusedCoverOverlayGameListUnloaded;
+                        focusedCoverOverlayObservedGameList.IsKeyboardFocusWithinChanged += OnFocusedCoverOverlayGameListKeyboardFocusWithinChanged;
+                    }
+                }
+
+                var toggle = FindVisualChildByName<System.Windows.Controls.Primitives.ToggleButton>(window, "ChangeViewButton");
+                if (!ReferenceEquals(focusedCoverOverlayObservedViewToggle, toggle))
+                {
+                    if (focusedCoverOverlayObservedViewToggle != null)
+                    {
+                        focusedCoverOverlayObservedViewToggle.Checked -= OnFocusedCoverOverlayLayoutToggleChanged;
+                        focusedCoverOverlayObservedViewToggle.Unchecked -= OnFocusedCoverOverlayLayoutToggleChanged;
+                    }
+
+                    focusedCoverOverlayObservedViewToggle = toggle;
+                    if (focusedCoverOverlayObservedViewToggle != null)
+                    {
+                        focusedCoverOverlayObservedViewToggle.Checked += OnFocusedCoverOverlayLayoutToggleChanged;
+                        focusedCoverOverlayObservedViewToggle.Unchecked += OnFocusedCoverOverlayLayoutToggleChanged;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private void UnhookFocusedCoverOverlayLayoutEvents()
+        {
+            try
+            {
+                if (focusedCoverOverlayObservedGameList != null)
+                {
+                    focusedCoverOverlayObservedGameList.IsVisibleChanged -= OnFocusedCoverOverlayGameListVisibilityChanged;
+                    focusedCoverOverlayObservedGameList.Unloaded -= OnFocusedCoverOverlayGameListUnloaded;
+                    focusedCoverOverlayObservedGameList.IsKeyboardFocusWithinChanged -= OnFocusedCoverOverlayGameListKeyboardFocusWithinChanged;
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (focusedCoverOverlayObservedViewToggle != null)
+                {
+                    focusedCoverOverlayObservedViewToggle.Checked -= OnFocusedCoverOverlayLayoutToggleChanged;
+                    focusedCoverOverlayObservedViewToggle.Unchecked -= OnFocusedCoverOverlayLayoutToggleChanged;
+                }
+            }
+            catch { }
+
+            focusedCoverOverlayObservedGameList = null;
+            focusedCoverOverlayObservedViewToggle = null;
+        }
+
+        private void OnFocusedCoverOverlayGameListKeyboardFocusWithinChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (!focusedCoverOverlayEnabled)
+            {
+                return;
+            }
+
+            var gameList = sender as ListBox;
+            if (gameList == null)
+            {
+                return;
+            }
+
+            if (!gameList.IsKeyboardFocusWithin)
+            {
+                // Leaving the game cards (bottom bar, filters, details, another control, etc.)
+                // must immediately stop and release the focused-cover preview.
+                CancelFocusedCoverOverlay(false);
+                return;
+            }
+
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                dispatcher?.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    if (!focusedCoverOverlayEnabled || !gameList.IsKeyboardFocusWithin)
+                    {
+                        return;
+                    }
+
+                    NotifyFocusedCoverGameSelected(playniteApi?.MainView?.SelectedGames?.FirstOrDefault());
+                }));
+            }
+            catch
+            {
+            }
+        }
+
+        private void OnFocusedCoverOverlayGameListVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (!focusedCoverOverlayEnabled)
+            {
+                return;
+            }
+
+            var gameList = sender as ListBox;
+            if (gameList == null || !gameList.IsVisible)
+            {
+                CancelFocusedCoverOverlay(false);
+                return;
+            }
+
+            if (!gameList.IsKeyboardFocusWithin)
+            {
+                return;
+            }
+
+            try
+            {
+                NotifyFocusedCoverGameSelected(playniteApi?.MainView?.SelectedGames?.FirstOrDefault());
+            }
+            catch { }
+        }
+
+        private void OnFocusedCoverOverlayGameListUnloaded(object sender, RoutedEventArgs e)
+        {
+            CancelFocusedCoverOverlay(false);
+            ClearFocusedCoverOverlayVisualCache();
+        }
+
+        private void OnFocusedCoverOverlayLayoutToggleChanged(object sender, RoutedEventArgs e)
+        {
+            if (!focusedCoverOverlayEnabled)
+            {
+                return;
+            }
+
+            CancelFocusedCoverOverlay(false);
+
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                dispatcher?.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+                {
+                    if (!focusedCoverOverlayEnabled ||
+                        focusedCoverOverlayGameList == null ||
+                        !focusedCoverOverlayGameList.IsKeyboardFocusWithin)
+                    {
+                        return;
+                    }
+
+                    NotifyFocusedCoverGameSelected(playniteApi?.MainView?.SelectedGames?.FirstOrDefault());
+                }));
+            }
+            catch { }
+        }
+
+        private void OnFocusedCoverOverlayDelayElapsed(object sender, EventArgs e)
+        {
+            focusedCoverOverlayDelayTimer.Stop();
+
+            try
+            {
+                var game = pendingFocusedCoverOverlayGame;
+                if (!focusedCoverOverlayEnabled || game == null)
+                {
+                    return;
+                }
+
+                var selectedGame = playniteApi?.MainView?.SelectedGames?.FirstOrDefault();
+                if (selectedGame == null || selectedGame.Id != game.Id)
+                {
+                    return;
+                }
+
+                var window = ResolveFocusedCoverOverlayWindow();
+                if (window == null || !window.IsVisible)
+                {
+                    DebugLog("[AnikiHelper][FocusedCoverOverlay] No fullscreen window containing both PART_ListGameItems and the overlay layer was found.");
+                    return;
+                }
+
+                HookFocusedCoverOverlayWindow(window);
+
+                if (!EnsureFocusedCoverOverlayVisualCache(window))
+                {
+                    DebugLog("[AnikiHelper][FocusedCoverOverlay] Fullscreen visual cache could not be resolved.");
+                    return;
+                }
+
+                var host = focusedCoverOverlayHost;
+                var gameList = focusedCoverOverlayGameList;
+                var layer = focusedCoverOverlayLayer;
+                var panel = focusedCoverOverlayPanel;
+                var cover = focusedCoverOverlayCover;
+                var silver = focusedCoverOverlaySilver;
+                var background = focusedCoverOverlayBackground;
+                var shade = focusedCoverOverlayShade;
+                var edge = focusedCoverOverlayEdge;
+                var sweep = focusedCoverOverlaySweep;
+
+                if (!gameList.IsVisible || gameList.SelectedIndex < 0 || gameList.SelectedItem == null)
+                {
+                    DebugLog($"[AnikiHelper][FocusedCoverOverlay] Game list not ready. Visible={gameList.IsVisible}, SelectedIndex={gameList.SelectedIndex}, SelectedItem={(gameList.SelectedItem != null)}.");
+                    return;
+                }
+
+                if (!gameList.IsKeyboardFocusWithin)
+                {
+                    DebugLog("[AnikiHelper][FocusedCoverOverlay] Preview cancelled because focus left the game list.");
+                    CancelFocusedCoverOverlay(false);
+                    return;
+                }
+
+                var container = gameList.ItemContainerGenerator.ContainerFromItem(gameList.SelectedItem) as ListBoxItem ??
+                                gameList.ItemContainerGenerator.ContainerFromIndex(gameList.SelectedIndex) as ListBoxItem;
+                if (container == null || !container.IsVisible || container.ActualWidth < 2 || container.ActualHeight < 2)
+                {
+                    DebugLog($"[AnikiHelper][FocusedCoverOverlay] Selected container not ready. Found={(container != null)}, Visible={container?.IsVisible}, Size={container?.ActualWidth:0}x{container?.ActualHeight:0}.");
+                    return;
+                }
+
+                Rect coverBounds;
+                try
+                {
+                    coverBounds = container.TransformToAncestor(host).TransformBounds(
+                        new Rect(0, 0, container.ActualWidth, container.ActualHeight));
+                }
+                catch
+                {
+                    return;
+                }
+
+                var hostWidth = host.ActualWidth;
+                var hostHeight = host.ActualHeight;
+                if (hostWidth < 10 || hostHeight < 10)
+                {
+                    return;
+                }
+
+                var coverWidth = coverBounds.Width;
+                var coverHeight = coverBounds.Height;
+                const double horizontalExpansion = 240.0;
+                const double verticalExpansion = 18.0;
+                const double safeEdge = 12.0;
+
+                var finalWidth = Math.Min(coverWidth + horizontalExpansion, Math.Max(coverWidth, hostWidth - (safeEdge * 2)));
+                var finalHeight = Math.Min(coverHeight + verticalExpansion, Math.Max(coverHeight, hostHeight - (safeEdge * 2)));
+
+                var desiredLeft = coverBounds.Left - ((finalWidth - coverWidth) / 2.0);
+                var desiredTop = coverBounds.Top - ((finalHeight - coverHeight) / 2.0);
+                var maxLeft = Math.Max(safeEdge, hostWidth - finalWidth - safeEdge);
+                var maxTop = Math.Max(safeEdge, hostHeight - finalHeight - safeEdge);
+                var finalLeft = Math.Max(safeEdge, Math.Min(desiredLeft, maxLeft));
+                var finalTop = Math.Max(safeEdge, Math.Min(desiredTop, maxTop));
+
+                ClearFocusedCoverOverlayAnimations(window);
+
+                panel.Width = coverWidth;
+                panel.Height = coverHeight;
+                Canvas.SetLeft(panel, finalLeft);
+                Canvas.SetTop(panel, finalTop);
+
+                var translate = new TranslateTransform(
+                    coverBounds.Left - finalLeft,
+                    coverBounds.Top - finalTop);
+                var transformGroup = new TransformGroup();
+                transformGroup.Children.Add(translate);
+                panel.RenderTransform = transformGroup;
+
+                panel.Opacity = 0;
+                cover.Opacity = 1;
+                cover.Background = new VisualBrush(container)
+                {
+                    Stretch = Stretch.UniformToFill,
+                    AlignmentX = AlignmentX.Center,
+                    AlignmentY = AlignmentY.Center
+                };
+
+                silver.Opacity = 0;
+                // Keep the transition wash truly white. Main.xaml also defines it as white,
+                // but set it here as well because this service owns the runtime overlay state.
+                silver.Background = Brushes.White;
+
+                if (edge != null) edge.Opacity = 0;
+                if (sweep != null) sweep.Opacity = 0;
+
+                var extraMetadataRoot = (window.TryFindResource("ExtraMetadataPath") ?? Application.Current?.TryFindResource("ExtraMetadataPath"))?.ToString();
+                var gameFolder = !string.IsNullOrWhiteSpace(extraMetadataRoot)
+                    ? Path.Combine(extraMetadataRoot, "ExtraMetadata", "games", game.Id.ToString())
+                    : null;
+
+                focusedCoverOverlayVideoPath = focusedCoverOverlayTrailerMode && !string.IsNullOrWhiteSpace(gameFolder)
+                    ? Path.Combine(gameFolder, "VideoMicroTrailer.mp4")
+                    : null;
+                focusedCoverOverlayLogoPath = !string.IsNullOrWhiteSpace(gameFolder)
+                    ? Path.Combine(gameFolder, "logo.png")
+                    : null;
+
+                var hasVideo = focusedCoverOverlayTrailerMode && IsExistingLocalFile(focusedCoverOverlayVideoPath);
+                focusedCoverOverlayBackgroundPath = hasVideo ? null : ResolveGameBackgroundPath(game);
+
+                var hasBackground = IsExistingLocalFile(focusedCoverOverlayBackgroundPath);
+                var hasLogo = IsExistingLocalFile(focusedCoverOverlayLogoPath);
+                var hasRevealContent = hasVideo || hasBackground;
+
+                // Background previews are static images, so prepare the destination image before the
+                // expansion begins. Unlike the video path, the destination frame is available immediately,
+                // which lets us build a true cover/background crossfade during the normal zoom motion.
+                if (!hasVideo && hasBackground && background != null)
+                {
+                    background.BeginAnimation(UIElement.OpacityProperty, null);
+                    background.Source = LoadOverlayBitmap(focusedCoverOverlayBackgroundPath, 720);
+                    // Keep the destination background fully rendered behind the cover from frame 1.
+                    // The cover and white wash hide it until the handoff, so there is no visible
+                    // background fade-in / "arrival" during the zoom.
+                    background.Opacity = 1;
+                    background.Visibility = Visibility.Visible;
+                }
+
+                focusedCoverOverlayActiveGameId = game.Id;
+                layer.Visibility = Visibility.Visible;
+                panel.Visibility = Visibility.Visible;
+
+                panel.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(70))
+                {
+                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+                // Keep the validated normal geometric zoom for both video and background modes.
+                // The only difference between the two paths is how cover/background content crossfades inside it.
+                panel.BeginAnimation(FrameworkElement.WidthProperty, new DoubleAnimation(coverWidth, finalWidth, TimeSpan.FromMilliseconds(480))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+                panel.BeginAnimation(FrameworkElement.HeightProperty, new DoubleAnimation(coverHeight, finalHeight, TimeSpan.FromMilliseconds(480))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+                translate.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(translate.X, 0, TimeSpan.FromMilliseconds(480))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+                translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(translate.Y, 0, TimeSpan.FromMilliseconds(480))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+                if (edge != null)
+                {
+                    edge.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 0.72, TimeSpan.FromMilliseconds(360))
+                    {
+                        EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut },
+                        FillBehavior = FillBehavior.HoldEnd
+                    }, HandoffBehavior.SnapshotAndReplace);
+                }
+
+                if (hasRevealContent)
+                {
+                    if (hasVideo)
+                    {
+                        // Keep the cover fully visible until MediaOpened confirms that the trailer is ready.
+                        // This avoids ever exposing the empty MediaElement / panel background during the zoom.
+                        var coverHold = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                        coverHold.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                        coverHold.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(520))));
+                        cover.BeginAnimation(UIElement.OpacityProperty, coverHold, HandoffBehavior.SnapshotAndReplace);
+
+                        // Premium exposure wash: it starts with the zoom, builds progressively instead of flashing,
+                        // and remains as a soft light veil until the first trailer frame is ready.
+                        var colorWashHold = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                        colorWashHold.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                        colorWashHold.KeyFrames.Add(new EasingDoubleKeyFrame(0.12, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                        colorWashHold.KeyFrames.Add(new EasingDoubleKeyFrame(0.28, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(190)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+                        colorWashHold.KeyFrames.Add(new EasingDoubleKeyFrame(0.34, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                        colorWashHold.KeyFrames.Add(new LinearDoubleKeyFrame(0.34, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(700))));
+                        silver.BeginAnimation(UIElement.OpacityProperty, colorWashHold, HandoffBehavior.SnapshotAndReplace);
+                    }
+                    else
+                    {
+                        // Crossfade the background near the end of the cover zoom to hide recropping.
+                        var coverFade = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                        coverFade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                        coverFade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(185))));
+                        coverFade.KeyFrames.Add(new EasingDoubleKeyFrame(0.88, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(270)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                        coverFade.KeyFrames.Add(new EasingDoubleKeyFrame(0.34, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(390)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+                        coverFade.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(515)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+                        cover.BeginAnimation(UIElement.OpacityProperty, coverFade, HandoffBehavior.SnapshotAndReplace);
+
+                        if (background != null)
+                        {
+                            // No background opacity animation here: it is already fully visible behind the cover.
+                            // Only the cover opacity and white exposure wash animate the transition.
+                            background.BeginAnimation(UIElement.OpacityProperty, null);
+                            background.Opacity = 1;
+                        }
+
+                        // Stronger exposure bridge than V18: it hides the cover stretching during the
+                        // first half of the zoom, then masks the late cover -> background handoff.
+                        var colorWashFade = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                        colorWashFade.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                        colorWashFade.KeyFrames.Add(new EasingDoubleKeyFrame(0.18, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(60)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                        colorWashFade.KeyFrames.Add(new EasingDoubleKeyFrame(0.36, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(155)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+                        colorWashFade.KeyFrames.Add(new EasingDoubleKeyFrame(0.48, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(270)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                        colorWashFade.KeyFrames.Add(new LinearDoubleKeyFrame(0.48, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(355))));
+                        colorWashFade.KeyFrames.Add(new EasingDoubleKeyFrame(0.24, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(500)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+                        colorWashFade.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(660)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+                        silver.BeginAnimation(UIElement.OpacityProperty, colorWashFade, HandoffBehavior.SnapshotAndReplace);
+
+                        // Let the bright handoff finish first, then re-introduce the normal shade for the logo.
+                        if (shade != null)
+                        {
+                            var backgroundShade = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                            backgroundShade.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                            backgroundShade.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(520))));
+                            backgroundShade.KeyFrames.Add(new EasingDoubleKeyFrame(0.14, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(680)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                            backgroundShade.KeyFrames.Add(new EasingDoubleKeyFrame(0.26, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(900)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                            shade.BeginAnimation(UIElement.OpacityProperty, backgroundShade, HandoffBehavior.SnapshotAndReplace);
+                        }
+                    }
+                }
+
+                if (hasVideo || hasBackground || hasLogo)
+                {
+                    focusedCoverOverlayMediaDelayTimer.Stop();
+                    focusedCoverOverlayMediaDelayTimer.Start();
+                }
+
+                DebugLog($"[AnikiHelper][FocusedCoverOverlay] Opened global overlay for '{game.Name}' at ({finalLeft:0},{finalTop:0}) {finalWidth:0}x{finalHeight:0}.");
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverOverlay] Failed to reveal overlay.");
+                HideFocusedCoverOverlayVisual();
+            }
+        }
+
+        private void OnFocusedCoverOverlayMediaDelayElapsed(object sender, EventArgs e)
+        {
+            focusedCoverOverlayMediaDelayTimer.Stop();
+
+            try
+            {
+                if (!focusedCoverOverlayEnabled || focusedCoverOverlayActiveGameId == Guid.Empty)
+                {
+                    return;
+                }
+
+                var selectedGame = playniteApi?.MainView?.SelectedGames?.FirstOrDefault();
+                if (selectedGame == null || selectedGame.Id != focusedCoverOverlayActiveGameId)
+                {
+                    return;
+                }
+
+                var window = focusedCoverOverlayHookedWindow ?? ResolveFocusedCoverOverlayWindow();
+                if (window == null || !window.IsVisible)
+                {
+                    return;
+                }
+
+                if (!EnsureFocusedCoverOverlayVisualCache(window))
+                {
+                    return;
+                }
+
+                if (focusedCoverOverlayGameList == null || !focusedCoverOverlayGameList.IsKeyboardFocusWithin)
+                {
+                    CancelFocusedCoverOverlay(false);
+                    return;
+                }
+
+                var background = focusedCoverOverlayBackground;
+                var media = focusedCoverOverlayMedia;
+                var logo = focusedCoverOverlayLogo;
+                var shade = focusedCoverOverlayShade;
+
+                var hasVideo = focusedCoverOverlayTrailerMode && IsExistingLocalFile(focusedCoverOverlayVideoPath);
+                var hasBackground = !hasVideo && IsExistingLocalFile(focusedCoverOverlayBackgroundPath);
+
+                if (hasVideo)
+                {
+                    background.Source = null;
+                    background.Opacity = 0;
+                    background.Visibility = Visibility.Collapsed;
+
+                    focusedCoverOverlayMediaRequestGameId = focusedCoverOverlayActiveGameId;
+                    media.BeginAnimation(UIElement.OpacityProperty, null);
+                    media.Opacity = 0;
+                    media.Source = new Uri(focusedCoverOverlayVideoPath, UriKind.Absolute);
+                    media.Visibility = Visibility.Visible;
+                    // The actual cover/silver -> video crossfade starts from MediaOpened.
+                }
+                else if (hasBackground)
+                {
+                    // The background was prepared before the zoom and its crossfade is already running.
+                    // The media-delay timer remains useful for the logo, but must not restart the image fade.
+                    media.Source = null;
+                    media.Opacity = 0;
+                    media.Visibility = Visibility.Collapsed;
+                }
+
+                if (hasVideo)
+                {
+                    // Keep the dark shade out of the cover -> trailer transition.
+                    // It will fade in only after MediaOpened, once the white exposure wash is already releasing.
+                    shade.BeginAnimation(UIElement.OpacityProperty, null);
+                    shade.Opacity = 0;
+                }
+                else if (!hasBackground)
+                {
+                    // Logo-only fallback keeps the legacy shade behavior. Background previews already
+                    // started their shade animation together with the cover/background crossfade.
+                    shade.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 0.26, TimeSpan.FromMilliseconds(360))
+                    {
+                        BeginTime = TimeSpan.FromMilliseconds(110),
+                        FillBehavior = FillBehavior.HoldEnd
+                    }, HandoffBehavior.SnapshotAndReplace);
+                }
+
+                if (IsExistingLocalFile(focusedCoverOverlayLogoPath))
+                {
+                    logo.Source = LoadOverlayBitmap(focusedCoverOverlayLogoPath, 320);
+                    logo.Visibility = Visibility.Visible;
+
+                    var logoDelayMs = hasVideo ? 2100 : 1250;
+
+                    logo.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(560))
+                    {
+                        BeginTime = TimeSpan.FromMilliseconds(logoDelayMs),
+                        EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut },
+                        FillBehavior = FillBehavior.HoldEnd
+                    }, HandoffBehavior.SnapshotAndReplace);
+
+                    var logoScale = new ScaleTransform(0.98, 0.98);
+                    var logoTranslate = new TranslateTransform(0, 48);
+                    var logoGroup = new TransformGroup();
+                    logoGroup.Children.Add(logoScale);
+                    logoGroup.Children.Add(logoTranslate);
+                    logo.RenderTransform = logoGroup;
+
+                    logoTranslate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(48, 0, TimeSpan.FromMilliseconds(650))
+                    {
+                        BeginTime = TimeSpan.FromMilliseconds(logoDelayMs),
+                        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                        FillBehavior = FillBehavior.HoldEnd
+                    }, HandoffBehavior.SnapshotAndReplace);
+
+                    var logoScaleAnimation = new DoubleAnimation(0.98, 1.0, TimeSpan.FromMilliseconds(650))
+                    {
+                        BeginTime = TimeSpan.FromMilliseconds(logoDelayMs),
+                        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                        FillBehavior = FillBehavior.HoldEnd
+                    };
+                    logoScale.BeginAnimation(ScaleTransform.ScaleXProperty, logoScaleAnimation, HandoffBehavior.SnapshotAndReplace);
+                    logoScale.BeginAnimation(ScaleTransform.ScaleYProperty, logoScaleAnimation.Clone(), HandoffBehavior.SnapshotAndReplace);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverOverlay] Failed to load delayed media.");
+            }
+        }
+
+
+        private void OnFocusedCoverOverlayMediaOpened(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var media = sender as MediaElement;
+                if (media == null ||
+                    media != focusedCoverOverlayMedia ||
+                    focusedCoverOverlayMediaRequestGameId == Guid.Empty ||
+                    focusedCoverOverlayMediaRequestGameId != focusedCoverOverlayActiveGameId)
+                {
+                    return;
+                }
+
+                var selectedGame = playniteApi?.MainView?.SelectedGames?.FirstOrDefault();
+                if (selectedGame == null || selectedGame.Id != focusedCoverOverlayActiveGameId)
+                {
+                    return;
+                }
+
+                if (focusedCoverOverlayGameList == null || !focusedCoverOverlayGameList.IsKeyboardFocusWithin)
+                {
+                    CancelFocusedCoverOverlay(false);
+                    return;
+                }
+
+                var cover = focusedCoverOverlayCover;
+                var silver = focusedCoverOverlaySilver;
+                var shade = focusedCoverOverlayShade;
+                if (cover == null || silver == null)
+                {
+                    return;
+                }
+
+                var currentCoverOpacity = cover.Opacity;
+                var currentSilverOpacity = silver.Opacity;
+
+                cover.BeginAnimation(UIElement.OpacityProperty, null);
+                cover.Opacity = currentCoverOpacity;
+                silver.BeginAnimation(UIElement.OpacityProperty, null);
+                silver.Opacity = currentSilverOpacity;
+
+                // MediaOpened can fire a little before the first decoded frame is painted.
+                // Give the MediaElement a short safety window, then crossfade underneath the light veil.
+                var mediaReveal = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                mediaReveal.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                mediaReveal.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(75))));
+                mediaReveal.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(360)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+                media.BeginAnimation(UIElement.OpacityProperty, mediaReveal, HandoffBehavior.SnapshotAndReplace);
+
+                // The cover starts leaving only after the trailer has begun appearing behind it.
+                // The overlap removes the "blank panel" risk while keeping the transition fluid.
+                var coverRelease = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                coverRelease.KeyFrames.Add(new LinearDoubleKeyFrame(currentCoverOpacity, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                coverRelease.KeyFrames.Add(new LinearDoubleKeyFrame(currentCoverOpacity, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(95))));
+                coverRelease.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(390)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+                cover.BeginAnimation(UIElement.OpacityProperty, coverRelease, HandoffBehavior.SnapshotAndReplace);
+
+                // Small exposure bloom at the exact handoff, then a long soft release revealing the trailer.
+                // This is the visible "premium" bridge, not a full white flash.
+                var transitionPeak = Math.Max(currentSilverOpacity, 0.44);
+                var colorWashBridge = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.HoldEnd };
+                colorWashBridge.KeyFrames.Add(new LinearDoubleKeyFrame(currentSilverOpacity, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                colorWashBridge.KeyFrames.Add(new EasingDoubleKeyFrame(transitionPeak, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(110)), new SineEase { EasingMode = EasingMode.EaseOut }));
+                colorWashBridge.KeyFrames.Add(new LinearDoubleKeyFrame(transitionPeak, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(175))));
+                colorWashBridge.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(540)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+                silver.BeginAnimation(UIElement.OpacityProperty, colorWashBridge, HandoffBehavior.SnapshotAndReplace);
+
+                // Once the image handoff is established, restore the normal cinematic shade for logo readability.
+                if (shade != null)
+                {
+                    shade.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 0.26, TimeSpan.FromMilliseconds(380))
+                    {
+                        BeginTime = TimeSpan.FromMilliseconds(260),
+                        EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut },
+                        FillBehavior = FillBehavior.HoldEnd
+                    }, HandoffBehavior.SnapshotAndReplace);
+                }
+
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverOverlay] Failed to start MediaOpened crossfade.");
+            }
+        }
+
+        private void OnFocusedCoverOverlayMediaFailed(object sender, ExceptionRoutedEventArgs e)
+        {
+            try
+            {
+                var media = sender as MediaElement;
+                if (media == null ||
+                    media != focusedCoverOverlayMedia ||
+                    !focusedCoverOverlayTrailerMode ||
+                    focusedCoverOverlayMediaRequestGameId == Guid.Empty ||
+                    focusedCoverOverlayMediaRequestGameId != focusedCoverOverlayActiveGameId)
+                {
+                    return;
+                }
+
+                focusedCoverOverlayMediaRequestGameId = Guid.Empty;
+                try { media.Source = null; } catch { }
+                media.Opacity = 0;
+                media.Visibility = Visibility.Collapsed;
+
+                var background = focusedCoverOverlayBackground;
+                var cover = focusedCoverOverlayCover;
+                var silver = focusedCoverOverlaySilver;
+
+                if (background == null || cover == null || silver == null)
+                {
+                    return;
+                }
+
+                var fallbackPath = ResolveGameBackgroundPath(playniteApi?.MainView?.SelectedGames?.FirstOrDefault());
+                if (!IsExistingLocalFile(fallbackPath))
+                {
+                    return;
+                }
+
+                background.Source = LoadOverlayBitmap(fallbackPath, 720);
+                background.Visibility = Visibility.Visible;
+                background.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(480))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+                var currentCoverOpacity = cover.Opacity;
+                var currentSilverOpacity = silver.Opacity;
+                cover.BeginAnimation(UIElement.OpacityProperty, null);
+                cover.Opacity = currentCoverOpacity;
+                silver.BeginAnimation(UIElement.OpacityProperty, null);
+                silver.Opacity = currentSilverOpacity;
+
+                cover.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(currentCoverOpacity, 0, TimeSpan.FromMilliseconds(380))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+                silver.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(Math.Max(currentSilverOpacity, 0.16), 0, TimeSpan.FromMilliseconds(460))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                }, HandoffBehavior.SnapshotAndReplace);
+
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][FocusedCoverOverlay] Media failed and fallback could not be revealed.");
+            }
+        }
+
+        private string ResolveGameBackgroundPath(Game game)
+        {
+            try
+            {
+                if (game == null || string.IsNullOrWhiteSpace(game.BackgroundImage))
+                {
+                    return null;
+                }
+
+                if (Uri.TryCreate(game.BackgroundImage, UriKind.Absolute, out var remoteUri) &&
+                    (remoteUri.Scheme == Uri.UriSchemeHttp || remoteUri.Scheme == Uri.UriSchemeHttps))
+                {
+                    return null;
+                }
+
+                return playniteApi?.Database?.GetFullFilePath(game.BackgroundImage);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsExistingLocalFile(string path)
+        {
+            try
+            {
+                return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static BitmapImage LoadOverlayBitmap(string path, int decodePixelWidth)
+        {
+            if (!IsExistingLocalFile(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                if (decodePixelWidth > 0)
+                {
+                    bitmap.DecodePixelWidth = decodePixelWidth;
+                }
+                bitmap.UriSource = new Uri(path, UriKind.Absolute);
+                bitmap.EndInit();
+                if (bitmap.CanFreeze)
+                {
+                    bitmap.Freeze();
+                }
+                return bitmap;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void ClearFocusedCoverOverlayVisualCache()
+        {
+            UnhookFocusedCoverOverlayLayoutEvents();
+            if (focusedCoverOverlayEventMedia != null)
+            {
+                try
+                {
+                    focusedCoverOverlayEventMedia.MediaOpened -= OnFocusedCoverOverlayMediaOpened;
+                    focusedCoverOverlayEventMedia.MediaFailed -= OnFocusedCoverOverlayMediaFailed;
+                }
+                catch { }
+            }
+            focusedCoverOverlayEventMedia = null;
+            focusedCoverOverlayMediaRequestGameId = Guid.Empty;
+            focusedCoverOverlayHost = null;
+            focusedCoverOverlayGameList = null;
+            focusedCoverOverlayLayer = null;
+            focusedCoverOverlayPanel = null;
+            focusedCoverOverlayCover = null;
+            focusedCoverOverlaySilver = null;
+            focusedCoverOverlayShade = null;
+            focusedCoverOverlayBackground = null;
+            focusedCoverOverlayMedia = null;
+            focusedCoverOverlayLogo = null;
+            focusedCoverOverlayEdge = null;
+            focusedCoverOverlaySweep = null;
+        }
+
+        private bool EnsureFocusedCoverOverlayVisualCache(Window window)
+        {
+            if (window == null)
+            {
+                return false;
+            }
+
+            if (focusedCoverOverlayHost != null &&
+                focusedCoverOverlayGameList != null &&
+                focusedCoverOverlayLayer != null &&
+                focusedCoverOverlayPanel != null &&
+                focusedCoverOverlayCover != null &&
+                focusedCoverOverlaySilver != null &&
+                focusedCoverOverlayShade != null &&
+                focusedCoverOverlayBackground != null &&
+                focusedCoverOverlayMedia != null &&
+                focusedCoverOverlayLogo != null &&
+                focusedCoverOverlayEdge != null &&
+                focusedCoverOverlaySweep != null &&
+                focusedCoverOverlayPanel.IsLoaded)
+            {
+                return true;
+            }
+
+            focusedCoverOverlayHost = FindVisualChildByName<Grid>(window, "PART_MainHost");
+            focusedCoverOverlayGameList = FindVisualChildByName<ListBox>(window, "PART_ListGameItems");
+            focusedCoverOverlayLayer = FindVisualChildByName<Canvas>(window, "AnikiFocusedCoverOverlayLayer");
+            focusedCoverOverlayPanel = FindVisualChildByName<Grid>(window, "AnikiFocusedCoverOverlayPanel");
+            focusedCoverOverlayCover = FindVisualChildByName<Border>(window, "AnikiFocusedCoverOverlayCover");
+            focusedCoverOverlaySilver = FindVisualChildByName<Border>(window, "AnikiFocusedCoverOverlaySilver");
+            focusedCoverOverlayShade = FindVisualChildByName<Border>(window, "AnikiFocusedCoverOverlayShade");
+            focusedCoverOverlayBackground = FindVisualChildByName<Image>(window, "AnikiFocusedCoverOverlayBackground");
+            focusedCoverOverlayMedia = FindVisualChildByName<MediaElement>(window, "AnikiFocusedCoverOverlayMedia");
+            if (focusedCoverOverlayEventMedia != focusedCoverOverlayMedia)
+            {
+                if (focusedCoverOverlayEventMedia != null)
+                {
+                    try
+                    {
+                        focusedCoverOverlayEventMedia.MediaOpened -= OnFocusedCoverOverlayMediaOpened;
+                        focusedCoverOverlayEventMedia.MediaFailed -= OnFocusedCoverOverlayMediaFailed;
+                    }
+                    catch { }
+                }
+
+                focusedCoverOverlayEventMedia = focusedCoverOverlayMedia;
+                if (focusedCoverOverlayEventMedia != null)
+                {
+                    focusedCoverOverlayEventMedia.MediaOpened += OnFocusedCoverOverlayMediaOpened;
+                    focusedCoverOverlayEventMedia.MediaFailed += OnFocusedCoverOverlayMediaFailed;
+                }
+            }
+            focusedCoverOverlayLogo = FindVisualChildByName<Image>(window, "AnikiFocusedCoverOverlayLogo");
+            focusedCoverOverlayEdge = FindVisualChildByName<Border>(window, "AnikiFocusedCoverOverlayEdge");
+            focusedCoverOverlaySweep = FindVisualChildByName<Border>(window, "AnikiFocusedCoverOverlaySweep");
+            HookFocusedCoverOverlayLayoutEvents(window);
+
+            return focusedCoverOverlayHost != null &&
+                   focusedCoverOverlayGameList != null &&
+                   focusedCoverOverlayLayer != null &&
+                   focusedCoverOverlayPanel != null &&
+                   focusedCoverOverlayCover != null &&
+                   focusedCoverOverlaySilver != null &&
+                   focusedCoverOverlayShade != null &&
+                   focusedCoverOverlayBackground != null &&
+                   focusedCoverOverlayMedia != null &&
+                   focusedCoverOverlayLogo != null &&
+                   focusedCoverOverlayEdge != null &&
+                   focusedCoverOverlaySweep != null;
+        }
+
+
+        private void ClearFocusedCoverOverlayAnimations(Window window)
+        {
+            if (window == null || !EnsureFocusedCoverOverlayVisualCache(window))
+            {
+                return;
+            }
+
+            try
+            {
+                var panel = focusedCoverOverlayPanel;
+                var cover = focusedCoverOverlayCover;
+                var silver = focusedCoverOverlaySilver;
+                var background = focusedCoverOverlayBackground;
+                var media = focusedCoverOverlayMedia;
+                var logo = focusedCoverOverlayLogo;
+                var shade = focusedCoverOverlayShade;
+                var edge = focusedCoverOverlayEdge;
+                var sweep = focusedCoverOverlaySweep;
+
+                panel.BeginAnimation(UIElement.OpacityProperty, null);
+                panel.BeginAnimation(FrameworkElement.WidthProperty, null);
+                panel.BeginAnimation(FrameworkElement.HeightProperty, null);
+                if (panel.Clip is RectangleGeometry panelClip)
+                {
+                    panelClip.BeginAnimation(RectangleGeometry.RectProperty, null);
+                }
+                panel.Clip = null;
+                cover.BeginAnimation(UIElement.OpacityProperty, null);
+                silver.BeginAnimation(UIElement.OpacityProperty, null);
+                background.BeginAnimation(UIElement.OpacityProperty, null);
+                media.BeginAnimation(UIElement.OpacityProperty, null);
+                logo.BeginAnimation(UIElement.OpacityProperty, null);
+                shade.BeginAnimation(UIElement.OpacityProperty, null);
+                edge?.BeginAnimation(UIElement.OpacityProperty, null);
+                sweep?.BeginAnimation(UIElement.OpacityProperty, null);
+
+                var sweepTranslate = sweep?.RenderTransform as TranslateTransform;
+                sweepTranslate?.BeginAnimation(TranslateTransform.XProperty, null);
+
+                var panelGroup = panel.RenderTransform as TransformGroup;
+                var scale = panelGroup?.Children.OfType<ScaleTransform>().FirstOrDefault();
+                var translate = panelGroup?.Children.OfType<TranslateTransform>().FirstOrDefault();
+                scale?.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                scale?.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                translate?.BeginAnimation(TranslateTransform.XProperty, null);
+                translate?.BeginAnimation(TranslateTransform.YProperty, null);
+
+                var logoGroup = logo.RenderTransform as TransformGroup;
+                var logoTranslate = logoGroup?.Children.OfType<TranslateTransform>().FirstOrDefault();
+                var logoScale = logoGroup?.Children.OfType<ScaleTransform>().FirstOrDefault();
+                logoTranslate?.BeginAnimation(TranslateTransform.YProperty, null);
+                logoScale?.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                logoScale?.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            }
+            catch
+            {
+            }
+        }
+
+        private void HideFocusedCoverOverlayVisual()
+        {
+            try
+            {
+                // Never resolve/search the visual tree from Hide(). This method is called on
+                // every selection change, so it must be effectively free until an overlay has
+                // actually been opened and cached.
+                var window = focusedCoverOverlayHookedWindow;
+                if (window == null ||
+                    focusedCoverOverlayLayer == null ||
+                    focusedCoverOverlayPanel == null)
+                {
+                    return;
+                }
+
+                ClearFocusedCoverOverlayAnimations(window);
+
+                var layer = focusedCoverOverlayLayer;
+                var panel = focusedCoverOverlayPanel;
+                var cover = focusedCoverOverlayCover;
+                var silver = focusedCoverOverlaySilver;
+                var background = focusedCoverOverlayBackground;
+                var media = focusedCoverOverlayMedia;
+                var logo = focusedCoverOverlayLogo;
+                var shade = focusedCoverOverlayShade;
+                var edge = focusedCoverOverlayEdge;
+                var sweep = focusedCoverOverlaySweep;
+                focusedCoverOverlayMediaRequestGameId = Guid.Empty;
+
+                if (media != null)
+                {
+                    try { media.Source = null; } catch { }
+                    media.Opacity = 0;
+                    media.Visibility = Visibility.Collapsed;
+                }
+
+                if (background != null)
+                {
+                    background.Source = null;
+                    background.Opacity = 0;
+                    background.Visibility = Visibility.Collapsed;
+                }
+
+                if (logo != null)
+                {
+                    logo.Source = null;
+                    logo.Opacity = 0;
+                    logo.Visibility = Visibility.Collapsed;
+                }
+
+                if (cover != null)
+                {
+                    cover.Background = Brushes.Black;
+                    cover.Opacity = 1;
+                }
+
+
+                if (silver != null) silver.Opacity = 0;
+                if (shade != null) shade.Opacity = 0;
+                if (edge != null) edge.Opacity = 0;
+                if (sweep != null) sweep.Opacity = 0;
+                if (panel != null)
+                {
+                    panel.Opacity = 0;
+                    panel.Visibility = Visibility.Collapsed;
+                }
+                if (layer != null) layer.Visibility = Visibility.Collapsed;
+            }
+            catch
+            {
             }
         }
 
@@ -269,6 +1815,16 @@ namespace AnikiHelper.Services.AnikiThemeSettings
             {
                 settings.AnikiThemeSettingsValues["CompactGameInfoBar"] = false.ToString();
             }
+
+            // Focused-cover effects are mutually exclusive.
+            if (string.Equals(changedKey, "MicroTrailerOnFocusedCover", StringComparison.OrdinalIgnoreCase))
+            {
+                settings.AnikiThemeSettingsValues["BackgroundOnFocusedCover"] = false.ToString();
+            }
+            else if (string.Equals(changedKey, "BackgroundOnFocusedCover", StringComparison.OrdinalIgnoreCase))
+            {
+                settings.AnikiThemeSettingsValues["MicroTrailerOnFocusedCover"] = false.ToString();
+            }
         }
 
         private bool ApplyOptionDependenciesToStorage()
@@ -278,6 +1834,15 @@ namespace AnikiHelper.Services.AnikiThemeSettings
             if (currentFile?.Variables == null || settings?.AnikiThemeSettingsValues == null)
             {
                 return false;
+            }
+
+            // Migration/safety: old configurations may contain both values enabled.
+            // Keep the trailer mode and disable the background-only mode.
+            if (IsBooleanThemeOptionEnabled("MicroTrailerOnFocusedCover") &&
+                IsBooleanThemeOptionEnabled("BackgroundOnFocusedCover"))
+            {
+                settings.AnikiThemeSettingsValues["BackgroundOnFocusedCover"] = false.ToString();
+                changed = true;
             }
 
             foreach (var pair in currentFile.Variables)
@@ -1195,6 +2760,59 @@ namespace AnikiHelper.Services.AnikiThemeSettings
             }
         }
 
+        private bool MigrateLegacyMainBackgroundOptions()
+        {
+            try
+            {
+                if (currentFile?.Presets == null ||
+                    !currentFile.Presets.ContainsKey("MainBackground") ||
+                    settings?.AnikiThemeSettingsSelectedPresets == null ||
+                    settings.AnikiThemeSettingsValues == null)
+                {
+                    return false;
+                }
+
+                if (settings.AnikiThemeSettingsSelectedPresets.TryGetValue("MainBackground", out var currentSelection) &&
+                    !string.IsNullOrWhiteSpace(currentSelection))
+                {
+                    return false;
+                }
+
+                var hasNoBackground = settings.AnikiThemeSettingsValues.TryGetValue("NoBackground", out var noBackgroundValue);
+                var hasFilterBackground = settings.AnikiThemeSettingsValues.TryGetValue("BackgroundByFilter", out var filterValue);
+                var hasVisualPackBackground = settings.AnikiThemeSettingsValues.TryGetValue("BackgroundPackVisual", out var visualPackValue);
+
+                if (!hasNoBackground && !hasFilterBackground && !hasVisualPackBackground)
+                {
+                    return false;
+                }
+
+                var selectedMode = "Game";
+
+                if (hasNoBackground && ToBool(noBackgroundValue))
+                {
+                    selectedMode = "None";
+                }
+                else if (hasFilterBackground && ToBool(filterValue))
+                {
+                    selectedMode = "Filter";
+                }
+                else if (hasVisualPackBackground && ToBool(visualPackValue))
+                {
+                    selectedMode = "VisualPack";
+                }
+
+                settings.AnikiThemeSettingsSelectedPresets["MainBackground"] = selectedMode;
+                logger?.Info($"[AnikiHelper][Migration] Main background mode migrated to: {selectedMode}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][Migration] Failed to migrate legacy background options.");
+                return false;
+            }
+        }
+
         private bool SanitizeThemeSettingsStorage()
         {
             var changed = false;
@@ -1822,6 +3440,39 @@ namespace AnikiHelper.Services.AnikiThemeSettings
                     variable.Preview = File.Exists(previewPath) ? previewPath : null;
                 }
             }
+
+            foreach (var pair in currentFile.Variables)
+            {
+                var variable = pair.Value;
+
+                if (variable == null || string.IsNullOrWhiteSpace(variable.DependsOn))
+                {
+                    continue;
+                }
+
+                if (!currentFile.Variables.TryGetValue(variable.DependsOn, out var dependency) ||
+                    dependency == null)
+                {
+                    variable.DependencyMessage = null;
+                    continue;
+                }
+
+                var expectedValue = variable.DependsOnValue == null ||
+                                    ToBool(variable.DependsOnValue);
+
+                var messageFormat = expectedValue
+                    ? ResolveLocKey(
+                        "LOCThemeOptionRequiresEnabled",
+                        "Requires “{0}” to be enabled.")
+                    : ResolveLocKey(
+                        "LOCThemeOptionRequiresDisabled",
+                        "Requires “{0}” to be disabled.");
+
+                variable.DependencyMessage = string.Format(
+                    CultureInfo.CurrentCulture,
+                    messageFormat,
+                    dependency.DisplayName);
+            }
         }
 
         private void BuildCategories()
@@ -2434,7 +4085,7 @@ namespace AnikiHelper.Services.AnikiThemeSettings
                     return;
                 }
 
-                // Important: do not enumerate/read every preset XAML during LoadAndApply().
+                // Do not enumerate every preset XAML during LoadAndApply().
                 // An async void method runs synchronously until its first await, so the old code
                 // was scanning and reading all preset files before Playnite could finish rendering.
                 await Task.Delay(3000);

@@ -24,12 +24,7 @@ namespace AnikiHelper.Services.SteamFriends
         }
     }
 
-    /// <summary>
-    /// Authenticated Steam Web API client.
-    ///
-    /// The caller supplies the webapi_token obtained from the existing Steam WebLogin
-    /// session. No user-created Steam Web API key is required.
-    /// </summary>
+    /// <summary>Steam Web API client using the token from the existing Steam WebLogin session.</summary>
     public class SteamFriendsWebApiClient
     {
         private static readonly ILogger logger = LogManager.GetLogger();

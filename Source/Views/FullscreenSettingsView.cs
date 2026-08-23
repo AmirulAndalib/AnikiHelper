@@ -1,4 +1,4 @@
-using Playnite.SDK;
+﻿using Playnite.SDK;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -32,7 +32,7 @@ namespace AnikiHelperFullscreen.Views
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -47,7 +47,7 @@ namespace AnikiHelperFullscreen.Views
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -1091,7 +1091,7 @@ namespace AnikiHelperFullscreen.Views
             TryAddFallback("LOCInGameOverlayGameInfo", "GAME INFO");
             TryAddFallback("LOCInGameOverlayBack", "Back");
 
-            TryAddFallback("MediaGallery_Title", "Media gallery");
+            TryAddFallback("MediaGallery_Title", "Capture gallery");
             TryAddFallback("MediaGallery_Desc", "Aniki Helper reads media from Screenshots Visualizer and Screenshot Utilities. Configure your screenshot folders in those plugins; Aniki Helper only reads their data and generates thumbnails for faster navigation in the theme.");
             TryAddFallback("MediaGallery_GenerateThumbnails", "Media thumbnails");
             TryAddFallback("MediaGallery_GenerateThumbnails_Button", "Generate thumbnails");

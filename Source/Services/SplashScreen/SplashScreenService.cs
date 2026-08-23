@@ -1,4 +1,4 @@
-using Playnite.SDK.Models;
+﻿using Playnite.SDK.Models;
 
 namespace AnikiHelper.Services.SplashScreen
 {

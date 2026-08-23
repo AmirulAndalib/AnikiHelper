@@ -1,19 +1,24 @@
 ﻿using Playnite.SDK;
+using Playnite.SDK.Events;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
-using System.Threading;
-using System.Threading.Tasks;
-using Playnite.SDK.Events;
+using System.Windows;
+using System.Windows.Threading;
 using AnikiHelper.Services.WebBrowser;
 
 namespace AnikiHelper.Services.InGameOverlay
 {
+    /// <summary>Routes P10 input and borrows Playnite-owned SDL handles for analog/in-game fallback.</summary>
     internal sealed class AnikiOverlayInputListener : IDisposable
     {
-        private const uint SDL_INIT_JOYSTICK = 0x00000200;
-        private const uint SDL_INIT_GAMECONTROLLER = 0x00002000;
-        private const uint SDL_INIT_EVENTS = 0x00004000;
+        private const int SDL_CONTROLLER_AXIS_LEFTX = 0;
+        private const int SDL_CONTROLLER_AXIS_LEFTY = 1;
+        private const int SDL_CONTROLLER_AXIS_RIGHTX = 2;
+        private const int SDL_CONTROLLER_AXIS_RIGHTY = 3;
+        private const int SDL_CONTROLLER_AXIS_TRIGGERLEFT = 4;
+        private const int SDL_CONTROLLER_AXIS_TRIGGERRIGHT = 5;
 
         private const int SDL_CONTROLLER_BUTTON_A = 0;
         private const int SDL_CONTROLLER_BUTTON_B = 1;
@@ -31,45 +36,17 @@ namespace AnikiHelper.Services.InGameOverlay
         private const int SDL_CONTROLLER_BUTTON_DPAD_LEFT = 13;
         private const int SDL_CONTROLLER_BUTTON_DPAD_RIGHT = 14;
 
-        private const int SDL_CONTROLLER_AXIS_LEFTX = 0;
-        private const int SDL_CONTROLLER_AXIS_LEFTY = 1;
-        private const int SDL_CONTROLLER_AXIS_RIGHTX = 2;
-        private const int SDL_CONTROLLER_AXIS_RIGHTY = 3;
-        private const int SDL_CONTROLLER_AXIS_TRIGGERLEFT = 4;
-        private const int SDL_CONTROLLER_AXIS_TRIGGERRIGHT = 5;
+        private const int GuideComboGraceMs = 180;
+        private const int ShortcutChordGraceMs = 400;
+        private const int VirtualKeyboardHoldDurationMs = 600;
+        private const int VirtualKeyboardShortcutCooldownMs = 700;
+        private const int GamepadMouseHoldDurationMs = 600;
+        private const int GamepadMouseShortcutCooldownMs = 800;
+        private const int LeftStickSoloClickMaxDurationMs = 500;
+        private const int AnalogPollIntervalMs = 16;
 
         private readonly AnikiHelperSettings settings;
         private readonly ILogger logger;
-
-        private void DebugLog(string message)
-        {
-            try
-            {
-                if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
-                {
-                    logger?.Debug(message);
-                }
-            }
-            catch
-            {
-                // Never let debug logging break the plugin.
-            }
-        }
-
-        private void DebugLog(Exception exception, string message)
-        {
-            try
-            {
-                if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
-                {
-                    logger?.Debug(exception, message);
-                }
-            }
-            catch
-            {
-                // Never let debug logging break the plugin.
-            }
-        }
         private readonly Action onShortcutPressed;
         private readonly Action onVirtualKeyboardShortcutPressed;
         private readonly Action onGamepadMouseToggle;
@@ -79,36 +56,37 @@ namespace AnikiHelper.Services.InGameOverlay
         private readonly Func<bool> isOverlayEnabled;
         private readonly Func<bool> isOverlayVisible;
         private readonly Action<ControllerInput> onOverlayButtonPressed;
+        private readonly Func<bool> shouldUseSdlDigitalFallback;
         private readonly Func<bool> isWebBrowserActive;
         private readonly Action<WebBrowserGamepadInputState> onWebBrowserInput;
 
-        private readonly object syncRoot = new object();
-        private readonly List<IntPtr> controllers = new List<IntPtr>();
+        // P10 provides the physical L3/R3 button state directly. Keep the existing event name
+        // so Video Center does not need to know where the button state comes from.
+        internal static event Action LeftStickClicked;
 
-        private CancellationTokenSource cancellationTokenSource;
-        private Task pollingTask;
+        private readonly Dictionary<int, HashSet<ControllerInput>> heldButtonsByController =
+            new Dictionary<int, HashSet<ControllerInput>>();
+        private readonly HashSet<int> analogControllerIds = new HashSet<int>();
+        private readonly HashSet<ControllerInput> sdlFallbackHeldButtons = new HashSet<ControllerInput>();
+
+        private DispatcherTimer analogTimer;
         private bool isStarted;
-        private bool sdlAvailable;
+        private bool analogBridgeAvailable = true;
+        private bool analogBridgeSuccessLogged;
+        private bool sdlDigitalFallbackActive;
+        private bool sdlDigitalFallbackSuccessLogged;
+        private bool sdlDigitalFallbackNoControllerLogged;
 
-        private bool previousGuide;
-        private bool previousStart;
-        private bool previousBack;
-        private bool previousY;
-        private bool previousX;
-        private bool previousA;
-        private bool previousB;
-        private bool previousLeftShoulder;
-        private bool previousRightShoulder;
-        private bool previousDPadUp;
-        private bool previousDPadDown;
-        private bool previousDPadLeft;
-        private bool previousDPadRight;
         private bool shortcutHeld;
         private bool virtualKeyboardShortcutHeld;
         private bool gamepadMouseShortcutHeld;
         private bool browserBackPressPending;
         private bool browserBackChordConsumed;
         private bool browserShortcutSuppressionActive;
+        private bool leftStickSoloClickCandidate;
+
+        private DateTime leftStickSoloPressedAt = DateTime.MinValue;
+        private DateTime? guidePressedAt;
         private DateTime? virtualKeyboardHoldStartedAt;
         private DateTime? gamepadMouseHoldStartedAt;
         private DateTime lastShortcutTime = DateTime.MinValue;
@@ -117,15 +95,22 @@ namespace AnikiHelper.Services.InGameOverlay
         private DateTime lastYPressedTime = DateTime.MinValue;
         private DateTime lastVirtualKeyboardShortcutTime = DateTime.MinValue;
         private DateTime lastGamepadMouseShortcutTime = DateTime.MinValue;
-        private DateTime lastRefreshTime = DateTime.MinValue;
-        private int lastKnownJoystickCount = -1;
-        private DateTime? guidePressedAt;
-        private const int GuideComboGraceMs = 180;
-        private const int ShortcutChordGraceMs = 400;
-        private const int VirtualKeyboardHoldDurationMs = 600;
-        private const int VirtualKeyboardShortcutCooldownMs = 700;
-        private const int GamepadMouseHoldDurationMs = 600;
-        private const int GamepadMouseShortcutCooldownMs = 800;
+
+        private struct ButtonTransition
+        {
+            public bool PressedNow;
+            public bool ReleasedNow;
+        }
+
+        private struct AnalogState
+        {
+            public short LeftX;
+            public short LeftY;
+            public short RightX;
+            public short RightY;
+            public short LeftTrigger;
+            public short RightTrigger;
+        }
 
         public AnikiOverlayInputListener(
             AnikiHelperSettings settings,
@@ -139,6 +124,7 @@ namespace AnikiHelper.Services.InGameOverlay
             Func<bool> isOverlayEnabled,
             Func<bool> isOverlayVisible,
             Action<ControllerInput> onOverlayButtonPressed,
+            Func<bool> shouldUseSdlDigitalFallback,
             Func<bool> isWebBrowserActive,
             Action<WebBrowserGamepadInputState> onWebBrowserInput)
         {
@@ -153,6 +139,7 @@ namespace AnikiHelper.Services.InGameOverlay
             this.isOverlayEnabled = isOverlayEnabled;
             this.isOverlayVisible = isOverlayVisible;
             this.onOverlayButtonPressed = onOverlayButtonPressed;
+            this.shouldUseSdlDigitalFallback = shouldUseSdlDigitalFallback;
             this.isWebBrowserActive = isWebBrowserActive;
             this.onWebBrowserInput = onWebBrowserInput;
         }
@@ -165,13 +152,13 @@ namespace AnikiHelper.Services.InGameOverlay
             }
 
             isStarted = true;
-            cancellationTokenSource = new CancellationTokenSource();
+            StartAnalogTimer();
 
-            pollingTask = Task.Factory.StartNew(
-                () => PollLoop(cancellationTokenSource.Token),
-                cancellationTokenSource.Token,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default);
+            DebugLog(
+                $"[AnikiHelper][OverlayInput][P10] Native button routing started. " +
+                $"ControllersSeen={analogControllerIds.Count}. " +
+                "SDL borrows Playnite-owned handles for analog input and in-game digital fallback only; " +
+                "Aniki does not init/open/update/close SDL controllers.");
         }
 
         public void Stop()
@@ -182,666 +169,879 @@ namespace AnikiHelper.Services.InGameOverlay
             }
 
             isStarted = false;
+            StopAnalogTimer();
+            onGamepadMouseSuspendInput?.Invoke();
 
-            try
-            {
-                cancellationTokenSource?.Cancel();
-            }
-            catch
-            {
-            }
+            heldButtonsByController.Clear();
+            analogControllerIds.Clear();
+            sdlFallbackHeldButtons.Clear();
+            sdlDigitalFallbackActive = false;
+            ResetTransientState();
 
-            try
-            {
-                pollingTask?.Wait(400);
-            }
-            catch
-            {
-            }
-
-            pollingTask = null;
-
-            try
-            {
-                cancellationTokenSource?.Dispose();
-            }
-            catch
-            {
-            }
-
-            cancellationTokenSource = null;
-
-            CloseControllers();
-
-            if (sdlAvailable)
-            {
-                try
-                {
-                    SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS);
-                }
-                catch
-                {
-                }
-            }
-
-            sdlAvailable = false;
-            lastKnownJoystickCount = -1;
+            DebugLog("[AnikiHelper][OverlayInput][P10] Native controller router stopped. No SDL worker thread to join.");
         }
 
-        private void PollLoop(CancellationToken token)
+        public void HandleControllerConnected(OnControllerConnectedArgs args)
         {
             try
             {
-                try
-                {
-                    var result = SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS);
-                    sdlAvailable = result == 0;
-
-                    if (!sdlAvailable)
-                    {
-                        logger?.Warn("[AnikiHelper] SDL controller input listener could not initialize.");
-                        return;
-                    }
-
-                }
-                catch (DllNotFoundException ex)
-                {
-                    logger?.Warn(ex, "[AnikiHelper] SDL2.dll not found. Controller overlay shortcut will keep using Playnite events only.");
-                    return;
-                }
-                catch (EntryPointNotFoundException ex)
-                {
-                    logger?.Warn(ex, "[AnikiHelper] SDL entry point missing. Controller overlay shortcut will keep using Playnite events only.");
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    logger?.Warn(ex, "[AnikiHelper] SDL controller input listener failed to initialize.");
-                    return;
-                }
-
-                RefreshControllers(force: true);
-
-                while (!token.IsCancellationRequested)
-                {
-                    try
-                    {
-                        // Keep a very light hot-plug safety check, but do not close and reopen
-                        // stable controller handles every three seconds. A full refresh now only
-                        // happens when SDL reports a topology change or a tracked controller is
-                        // actually detached.
-                        if ((DateTime.UtcNow - lastRefreshTime).TotalSeconds >= 3)
-                        {
-                            RefreshControllers();
-                        }
-
-                        SDL_GameControllerUpdate();
-                        ReadControllers();
-                    }
-                    catch
-                    {
-                    }
-
-                    Thread.Sleep(16);
-                }
-            }
-            finally
-            {
-                CloseControllers();
-            }
-        }
-
-        private void RefreshControllers(bool force = false)
-        {
-            lastRefreshTime = DateTime.UtcNow;
-
-            try
-            {
-                var joystickCount = SDL_NumJoysticks();
-                if (joystickCount < 0)
+                var controller = args?.Controller;
+                if (controller == null)
                 {
                     return;
                 }
 
-                var hasDetachedController = false;
+                // Normally we seed borrowed SDL access only after Playnite reports native input,
+                // which preserves Playnite's controller filtering. If a controller is connected
+                // while the game already owns foreground, P10 digital callbacks may be suspended;
+                // in that specific case the connection InstanceId is enough to enable the fallback.
+                var fallbackNeeded = false;
+                try { fallbackNeeded = shouldUseSdlDigitalFallback?.Invoke() == true; } catch { }
 
-                lock (syncRoot)
+                if (fallbackNeeded)
                 {
-                    foreach (var controller in controllers)
-                    {
-                        if (controller == IntPtr.Zero || SDL_GameControllerGetAttached(controller) == 0)
-                        {
-                            hasDetachedController = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!force &&
-                    joystickCount == lastKnownJoystickCount &&
-                    !hasDetachedController)
-                {
-                    return;
+                    analogControllerIds.Add(controller.InstanceId);
                 }
 
                 DebugLog(
-                    $"[AnikiHelper][OverlayInput] Controller topology changed. " +
-                    $"Force={force}, PreviousJoysticks={lastKnownJoystickCount}, " +
-                    $"CurrentJoysticks={joystickCount}, Detached={hasDetachedController}");
-
-                // Rebuild handles only after a real connection/disconnection change.
-                // Under normal gameplay the same SDL handles remain open for the whole session.
-                CloseControllers();
-
-                var detectedGameControllers = 0;
-
-                lock (syncRoot)
-                {
-                    for (var i = 0; i < joystickCount; i++)
-                    {
-                        if (SDL_IsGameController(i) != 1)
-                        {
-                            continue;
-                        }
-
-                        detectedGameControllers++;
-
-                        var controller = SDL_GameControllerOpen(i);
-                        if (controller != IntPtr.Zero)
-                        {
-                            controllers.Add(controller);
-                        }
-                    }
-
-                    // If SDL detected compatible controllers but one failed to open, retry on the
-                    // next safety scan instead of considering the topology permanently valid.
-                    lastKnownJoystickCount = controllers.Count < detectedGameControllers
-                        ? -1
-                        : joystickCount;
-
-                    DebugLog(
-                        $"[AnikiHelper][OverlayInput] Controller handles refreshed. " +
-                        $"DetectedControllers={detectedGameControllers}, " +
-                        $"OpenedControllers={controllers.Count}");
-                }
+                    $"[AnikiHelper][OverlayInput][P10] Controller connected. " +
+                    $"InstanceId={controller.InstanceId}, Name='{controller.Name}', FallbackSeeded={fallbackNeeded}. " +
+                    "Normal SDL access still follows Playnite-owned handles.");
             }
             catch (Exception ex)
             {
-                DebugLog(ex, "[AnikiHelper][OverlayInput] Controller topology refresh failed.");
+                DebugLog(ex, "[AnikiHelper][OverlayInput][P10] Failed to register connected controller.");
             }
         }
 
-        private void CloseControllers()
+        public void HandleControllerDisconnected(OnControllerDisconnectedArgs args)
         {
-            lock (syncRoot)
+            try
             {
-                foreach (var controller in controllers)
+                var controller = args?.Controller;
+                if (controller == null)
                 {
-                    try
-                    {
-                        if (controller != IntPtr.Zero)
-                        {
-                            SDL_GameControllerClose(controller);
-                        }
-                    }
-                    catch
-                    {
-                    }
+                    return;
                 }
 
-                controllers.Clear();
+                analogControllerIds.Remove(controller.InstanceId);
+                heldButtonsByController.Remove(controller.InstanceId);
+                if (analogControllerIds.Count == 0)
+                {
+                    sdlFallbackHeldButtons.Clear();
+                    sdlDigitalFallbackActive = false;
+                }
+                ResetTransientStateAfterTopologyChange();
+
+                DebugLog(
+                    $"[AnikiHelper][OverlayInput][P10] Controller disconnected. " +
+                    $"InstanceId={controller.InstanceId}, Name='{controller.Name}'.");
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][OverlayInput][P10] Failed to unregister disconnected controller.");
             }
         }
 
-        private void ReadControllers()
+        /// <summary>Processes a P10 button-state update and reports whether Aniki consumed it.</summary>
+        public bool HandleControllerButtonStateChanged(OnControllerButtonStateChangedArgs args)
         {
-            if (controllers.Count == 0)
+            if (!isStarted || args == null)
             {
-                previousGuide = false;
-                previousStart = false;
-                previousBack = false;
-                previousY = false;
-                previousX = false;
-                previousA = false;
-                previousB = false;
-                previousLeftShoulder = false;
-                previousRightShoulder = false;
-                previousDPadUp = false;
-                previousDPadDown = false;
-                previousDPadLeft = false;
-                previousDPadRight = false;
-                shortcutHeld = false;
-                virtualKeyboardShortcutHeld = false;
-                virtualKeyboardHoldStartedAt = null;
-                gamepadMouseShortcutHeld = false;
-                gamepadMouseHoldStartedAt = null;
-                ResetBrowserShortcutState();
-                onGamepadMouseSuspendInput?.Invoke();
-
-                if (isWebBrowserActive?.Invoke() == true)
-                {
-                    onWebBrowserInput?.Invoke(new WebBrowserGamepadInputState());
-                }
-
-                return;
+                return false;
             }
 
-            var guide = false;
-            var start = false;
-            var back = false;
-            var y = false;
-            var x = false;
-            var a = false;
-            var b = false;
-            var leftShoulder = false;
-            var rightShoulder = false;
-            var dpadUp = false;
-            var dpadDown = false;
-            var dpadLeft = false;
-            var dpadRight = false;
-            var leftStick = false;
-            var rightStick = false;
-            short leftAxisX = 0;
-            short leftAxisY = 0;
-            short rightAxisX = 0;
-            short rightAxisY = 0;
-            short leftTrigger = 0;
-            short rightTrigger = 0;
+            var transition = UpdateButtonState(args);
+            return ProcessButtonTransition(args.Button, transition, "P10");
+        }
 
-            lock (syncRoot)
-            {
-                foreach (var controller in controllers)
-                {
-                    if (controller == IntPtr.Zero)
-                    {
-                        continue;
-                    }
+        private bool ProcessButtonTransition(ControllerInput button, ButtonTransition transition, string source)
+        {
+            UpdatePressTimestamps(button, transition.PressedNow);
+            UpdateLeftStickSoloCandidate(button, transition);
 
-                    guide = guide || IsPressed(controller, SDL_CONTROLLER_BUTTON_GUIDE);
-                    start = start || IsPressed(controller, SDL_CONTROLLER_BUTTON_START);
-                    back = back || IsPressed(controller, SDL_CONTROLLER_BUTTON_BACK);
-                    y = y || IsPressed(controller, SDL_CONTROLLER_BUTTON_Y);
-                    x = x || IsPressed(controller, SDL_CONTROLLER_BUTTON_X);
-                    leftStick = leftStick || IsPressed(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK);
-                    rightStick = rightStick || IsPressed(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK);
-
-                    a = a || IsPressed(controller, SDL_CONTROLLER_BUTTON_A);
-                    b = b || IsPressed(controller, SDL_CONTROLLER_BUTTON_B);
-                    leftShoulder = leftShoulder || IsPressed(controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
-                    rightShoulder = rightShoulder || IsPressed(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
-                    dpadUp = dpadUp || IsPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_UP);
-                    dpadDown = dpadDown || IsPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_DOWN);
-                    dpadLeft = dpadLeft || IsPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT);
-                    dpadRight = dpadRight || IsPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
-
-                    leftAxisX = SelectAxisWithGreatestMagnitude(
-                        leftAxisX,
-                        ReadAxis(controller, SDL_CONTROLLER_AXIS_LEFTX));
-                    leftAxisY = SelectAxisWithGreatestMagnitude(
-                        leftAxisY,
-                        ReadAxis(controller, SDL_CONTROLLER_AXIS_LEFTY));
-                    rightAxisX = SelectAxisWithGreatestMagnitude(
-                        rightAxisX,
-                        ReadAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX));
-                    rightAxisY = SelectAxisWithGreatestMagnitude(
-                        rightAxisY,
-                        ReadAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY));
-                    leftTrigger = Math.Max(leftTrigger, ReadAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT));
-                    rightTrigger = Math.Max(rightTrigger, ReadAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
-                }
-            }
-
-            var guidePressedNow = guide && !previousGuide;
-            var guideReleasedNow = !guide && previousGuide;
-            var startPressedNow = start && !previousStart;
-            var backPressedNow = back && !previousBack;
-            var backReleasedNow = !back && previousBack;
-            var yPressedNow = y && !previousY;
-            var xPressedNow = x && !previousX;
-
-            var aPressedNow = a && !previousA;
-            var bPressedNow = b && !previousB;
-            var leftShoulderPressedNow = leftShoulder && !previousLeftShoulder;
-            var rightShoulderPressedNow = rightShoulder && !previousRightShoulder;
-            var dpadUpPressedNow = dpadUp && !previousDPadUp;
-            var dpadDownPressedNow = dpadDown && !previousDPadDown;
-            var dpadLeftPressedNow = dpadLeft && !previousDPadLeft;
-            var dpadRightPressedNow = dpadRight && !previousDPadRight;
-
-            var buttonTimestamp = DateTime.UtcNow;
-            if (startPressedNow)
-            {
-                lastStartPressedTime = buttonTimestamp;
-            }
-
-            if (backPressedNow)
-            {
-                lastBackPressedTime = buttonTimestamp;
-            }
-
-            if (yPressedNow)
-            {
-                lastYPressedTime = buttonTimestamp;
-            }
-
-            previousGuide = guide;
-            previousStart = start;
-            previousBack = back;
-            previousY = y;
-            previousX = x;
-            previousA = a;
-            previousB = b;
-            previousLeftShoulder = leftShoulder;
-            previousRightShoulder = rightShoulder;
-            previousDPadUp = dpadUp;
-            previousDPadDown = dpadDown;
-            previousDPadLeft = dpadLeft;
-            previousDPadRight = dpadRight;
-
-            if (isOverlayVisible != null && isOverlayVisible())
+            // The overlay/Aniki keyboard must win over the Browser. During a browser keyboard
+            // session the Browser stays visible, but B/Back belongs to the keyboard until it closes.
+            if (isOverlayVisible?.Invoke() == true)
             {
                 shortcutHeld = false;
                 onGamepadMouseSuspendInput?.Invoke();
 
-                if (dpadLeftPressedNow)
+                if (transition.PressedNow)
                 {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL DPadLeft pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.DPadLeft);
-                    return;
+                    if (string.Equals(source, "SDL", StringComparison.Ordinal))
+                    {
+                        DebugLog($"[AnikiHelper][OverlayInput][SDL-Fallback] Overlay button pressed: {button}.");
+                    }
+
+                    RouteOverlayButton(button);
                 }
 
-                if (dpadRightPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL DPadRight pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.DPadRight);
-                    return;
-                }
-
-                if (dpadUpPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL DPadUp pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.DPadUp);
-                    return;
-                }
-
-                if (dpadDownPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL DPadDown pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.DPadDown);
-                    return;
-                }
-
-                if (aPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL A pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.A);
-                    return;
-                }
-
-                if (xPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL X pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.X);
-                    return;
-                }
-
-                if (yPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL Y pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.Y);
-                    return;
-                }
-
-                if (startPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL Start pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.Start);
-                    return;
-                }
-
-                if (bPressedNow || backPressedNow)
-                {
-                    DebugLog("[AnikiHelper][OverlayInput] SDL B/Back pressed.");
-                    onOverlayButtonPressed?.Invoke(ControllerInput.B);
-                    return;
-                }
-
-                return;
+                return true;
             }
 
             if (isWebBrowserActive?.Invoke() == true)
             {
                 shortcutHeld = false;
-                virtualKeyboardShortcutHeld = false;
-                gamepadMouseShortcutHeld = false;
-                virtualKeyboardHoldStartedAt = null;
-                gamepadMouseHoldStartedAt = null;
+                ResetVirtualKeyboardShortcutState();
+                ResetGamepadMouseShortcutState();
                 onGamepadMouseSuspendInput?.Invoke();
 
-                var browserShortcutChordHeld = IsBrowserShortcutChordHeld(
-                    guide,
-                    start,
-                    back,
-                    y,
-                    x,
-                    leftStick,
-                    rightStick);
+                RouteBrowserButton(button, transition);
+                return true;
+            }
 
-                if (browserShortcutChordHeld)
+            if (HandleBrowserPostCloseSuppression())
+            {
+                return false;
+            }
+
+            var gamepadMouseChordActive = ProcessGamepadMouseShortcut();
+            var virtualKeyboardChordActive = ProcessVirtualKeyboardShortcut();
+
+            if (gamepadMouseChordActive || virtualKeyboardChordActive)
+            {
+                onGamepadMouseSuspendInput?.Invoke();
+                return false;
+            }
+
+            if (transition.ReleasedNow && button == ControllerInput.LeftStick)
+            {
+                TryRaiseLeftStickSoloClick();
+            }
+
+            if (ProcessOverlayShortcutEvent(button, transition))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private void StartAnalogTimer()
+        {
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher == null || dispatcher.HasShutdownStarted)
                 {
-                    browserShortcutSuppressionActive = true;
+                    logger?.Warn("[AnikiHelper] Analog controller bridge could not start because the WPF dispatcher is unavailable.");
+                    return;
                 }
 
-                if (backPressedNow)
+                Action start = () =>
                 {
-                    browserBackPressPending = true;
-                    browserBackChordConsumed = false;
+                    if (!isStarted || analogTimer != null || dispatcher.HasShutdownStarted)
+                    {
+                        return;
+                    }
+
+                    analogTimer = new DispatcherTimer(DispatcherPriority.Input, dispatcher)
+                    {
+                        Interval = TimeSpan.FromMilliseconds(AnalogPollIntervalMs)
+                    };
+                    analogTimer.Tick += AnalogTimer_Tick;
+                    analogTimer.Start();
+                };
+
+                if (dispatcher.CheckAccess())
+                {
+                    start();
                 }
-
-                if (browserBackPressPending && back &&
-                    (guide || start || y || x || leftStick || rightStick))
+                else
                 {
-                    browserBackChordConsumed = true;
-                    browserShortcutSuppressionActive = true;
+                    dispatcher.Invoke(start);
                 }
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper] Failed to start analog controller bridge timer.");
+            }
+        }
 
-                var closePressedNow = backReleasedNow &&
-                                      browserBackPressPending &&
-                                      !browserBackChordConsumed;
+        private void StopAnalogTimer()
+        {
+            var timer = analogTimer;
+            analogTimer = null;
 
-                if (backReleasedNow)
-                {
-                    browserBackPressPending = false;
-                    browserBackChordConsumed = false;
-                }
-
-                // A browser shortcut must not accidentally trigger its individual browser
-                // action. In particular, Back + R3 must neither close the browser nor toggle
-                // the global gamepad mouse mode after the browser window disappears.
-                var suppressKeyboardButton = x && (back || guide);
-                var suppressAddressButton = y && (back || guide);
-                var suppressEnterButton = start && (back || leftStick);
-
-                onWebBrowserInput?.Invoke(new WebBrowserGamepadInputState
-                {
-                    LeftX = leftAxisX,
-                    LeftY = leftAxisY,
-                    RightX = rightAxisX,
-                    RightY = rightAxisY,
-                    LeftClick = a,
-                    ActivatePressed = aPressedNow,
-                    BackPressed = bPressedNow,
-                    ClosePressed = closePressedNow,
-                    KeyboardPressed = xPressedNow && !suppressKeyboardButton,
-                    AddressPressed = yPressedNow && !suppressAddressButton,
-                    EnterPressed = startPressedNow && !suppressEnterButton,
-                    PreviousPressed = leftShoulderPressedNow,
-                    NextPressed = rightShoulderPressedNow,
-                    DPadUpPressed = dpadUpPressedNow,
-                    DPadDownPressed = dpadDownPressedNow,
-                    DPadLeftPressed = dpadLeftPressedNow,
-                    DPadRightPressed = dpadRightPressedNow
-                });
-
+            if (timer == null)
+            {
                 return;
             }
 
-            if (browserShortcutSuppressionActive)
+            try
             {
-                // The browser may have been closed while a global mouse/keyboard chord was
-                // still physically held. Wait for every chord button to be released so the
-                // same hold cannot immediately toggle another Aniki Helper feature.
-                if (guide || start || back || y || x || leftStick || rightStick)
+                var dispatcher = timer.Dispatcher;
+                Action stop = () =>
                 {
-                    shortcutHeld = false;
-                    ResetVirtualKeyboardShortcutState();
-                    ResetGamepadMouseShortcutState();
+                    try { timer.Stop(); } catch { }
+                    try { timer.Tick -= AnalogTimer_Tick; } catch { }
+                };
+
+                if (dispatcher == null || dispatcher.HasShutdownStarted)
+                {
+                    return;
+                }
+
+                if (dispatcher.CheckAccess())
+                {
+                    stop();
+                }
+                else
+                {
+                    dispatcher.Invoke(stop);
+                }
+            }
+            catch
+            {
+                // Dispatcher shutdown will tear down the timer. There is no background worker.
+            }
+        }
+
+        private void AnalogTimer_Tick(object sender, EventArgs e)
+        {
+            if (!isStarted)
+            {
+                return;
+            }
+
+            try
+            {
+                var useSdlDigitalFallback = false;
+                try { useSdlDigitalFallback = shouldUseSdlDigitalFallback?.Invoke() == true; } catch { }
+
+                if (useSdlDigitalFallback)
+                {
+                    PollSdlDigitalFallback();
+                }
+                else if (sdlDigitalFallbackActive)
+                {
+                    StopSdlDigitalFallback();
+                }
+
+                // Hold-based shortcuts are driven by the currently active digital source:
+                // P10 while Playnite owns input, or borrowed SDL button state while the game
+                // owns foreground. The same state machine is reused for both paths.
+                if (isOverlayVisible?.Invoke() != true && isWebBrowserActive?.Invoke() != true)
+                {
+                    if (HandleBrowserPostCloseSuppression())
+                    {
+                        return;
+                    }
+
+                    var mouseChord = ProcessGamepadMouseShortcut();
+                    var keyboardChord = ProcessVirtualKeyboardShortcut();
+
+                    if (mouseChord || keyboardChord)
+                    {
+                        onGamepadMouseSuspendInput?.Invoke();
+                        return;
+                    }
+
+                    ProcessGuideShortcutGrace();
+                }
+
+                var overlayVisible = isOverlayVisible?.Invoke() == true;
+                if (overlayVisible)
+                {
                     onGamepadMouseSuspendInput?.Invoke();
                     return;
                 }
 
-                browserShortcutSuppressionActive = false;
-                ResetBrowserShortcutState();
+                var browserActive = isWebBrowserActive?.Invoke() == true;
+                var mouseActive = isGamepadMouseActive?.Invoke() == true;
+
+                if (!browserActive && !mouseActive)
+                {
+                    return;
+                }
+
+                if (mouseActive && string.Equals(
+                    settings?.InGameOverlayGamepadMouseShortcut,
+                    "Disabled",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    onGamepadMouseToggle?.Invoke();
+                    mouseActive = false;
+                }
+
+                if (!browserActive && !mouseActive)
+                {
+                    return;
+                }
+
+                var analog = ReadAnalogState();
+
+                if (browserActive)
+                {
+                    onGamepadMouseSuspendInput?.Invoke();
+                    onWebBrowserInput?.Invoke(new WebBrowserGamepadInputState
+                    {
+                        LeftX = analog.LeftX,
+                        LeftY = analog.LeftY,
+                        RightX = analog.RightX,
+                        RightY = analog.RightY,
+                        LeftClick = IsHeld(ControllerInput.A)
+                    });
+                    return;
+                }
+
+                if (mouseActive)
+                {
+                    onGamepadMouseInput?.Invoke(new GamepadMouseInputState
+                    {
+                        RightX = analog.RightX,
+                        RightY = analog.RightY,
+                        LeftY = analog.LeftY,
+                        LeftTrigger = analog.LeftTrigger,
+                        RightTrigger = analog.RightTrigger,
+                        LeftClick = IsHeld(ControllerInput.A),
+                        RightClick = IsHeld(ControllerInput.X)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][OverlayInput][P10] Controller timer tick failed.");
+            }
+        }
+
+        private void PollSdlDigitalFallback()
+        {
+            if (!analogBridgeAvailable)
+            {
+                return;
+            }
+
+            if (!sdlDigitalFallbackActive)
+            {
+                // P10 can stop between a press and its release when the game takes foreground.
+                // Drop that stale native state before SDL becomes the temporary source of truth.
+                heldButtonsByController.Clear();
+                sdlFallbackHeldButtons.Clear();
+                ResetTransientState();
+                sdlDigitalFallbackActive = true;
+                sdlDigitalFallbackNoControllerLogged = false;
+
+                DebugLog(
+                    "[AnikiHelper][OverlayInput][SDL-Fallback] Enabled because the current game owns controller foreground. " +
+                    "Borrowing Playnite-owned SDL handles; no SDL init/open/update/close calls are made.");
+            }
+
+            if (analogControllerIds.Count == 0)
+            {
+                if (!sdlDigitalFallbackNoControllerLogged)
+                {
+                    sdlDigitalFallbackNoControllerLogged = true;
+                    DebugLog(
+                        "[AnikiHelper][OverlayInput][SDL-Fallback] Waiting for a Playnite-known controller InstanceId; " +
+                        "use/connect the controller in Playnite once so its owned SDL handle can be borrowed.");
+                }
+
+                return;
+            }
+
+            var states = new Dictionary<ControllerInput, bool>
+            {
+                [ControllerInput.A] = false,
+                [ControllerInput.B] = false,
+                [ControllerInput.X] = false,
+                [ControllerInput.Y] = false,
+                [ControllerInput.Back] = false,
+                [ControllerInput.Guide] = false,
+                [ControllerInput.Start] = false,
+                [ControllerInput.LeftStick] = false,
+                [ControllerInput.RightStick] = false,
+                [ControllerInput.LeftShoulder] = false,
+                [ControllerInput.RightShoulder] = false,
+                [ControllerInput.DPadUp] = false,
+                [ControllerInput.DPadDown] = false,
+                [ControllerInput.DPadLeft] = false,
+                [ControllerInput.DPadRight] = false
+            };
+
+            var lockTaken = false;
+
+            try
+            {
+                SDL_LockJoysticks();
+                lockTaken = true;
+
+                foreach (var instanceId in analogControllerIds.ToArray())
+                {
+                    var controller = SDL_GameControllerFromInstanceID(instanceId);
+                    if (controller == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    states[ControllerInput.A] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_A);
+                    states[ControllerInput.B] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_B);
+                    states[ControllerInput.X] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_X);
+                    states[ControllerInput.Y] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_Y);
+                    states[ControllerInput.Back] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_BACK);
+                    states[ControllerInput.Guide] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_GUIDE);
+                    states[ControllerInput.Start] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_START);
+                    states[ControllerInput.LeftStick] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK);
+                    states[ControllerInput.RightStick] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+                    states[ControllerInput.LeftShoulder] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+                    states[ControllerInput.RightShoulder] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+                    states[ControllerInput.DPadUp] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_UP);
+                    states[ControllerInput.DPadDown] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+                    states[ControllerInput.DPadLeft] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+                    states[ControllerInput.DPadRight] |= IsSdlButtonPressed(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+                }
+            }
+            catch (DllNotFoundException ex)
+            {
+                DisableAnalogBridge(ex, "SDL2.dll is unavailable");
+                return;
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                DisableAnalogBridge(ex, "required SDL button/locking entry point is unavailable");
+                return;
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][OverlayInput][SDL-Fallback] Failed to read borrowed SDL button state.");
+                return;
+            }
+            finally
+            {
+                if (lockTaken)
+                {
+                    try { SDL_UnlockJoysticks(); } catch { }
+                }
+            }
+
+            foreach (var state in states)
+            {
+                var transition = UpdateSdlFallbackButtonState(state.Key, state.Value);
+                if (!transition.PressedNow && !transition.ReleasedNow)
+                {
+                    continue;
+                }
+
+                ProcessButtonTransition(state.Key, transition, "SDL");
+            }
+
+            if (!sdlDigitalFallbackSuccessLogged)
+            {
+                sdlDigitalFallbackSuccessLogged = true;
+                DebugLog(
+                    "[AnikiHelper][OverlayInput][SDL-Fallback] Digital state is available from Playnite-owned SDL handles.");
+            }
+        }
+
+        private void StopSdlDigitalFallback()
+        {
+            sdlDigitalFallbackActive = false;
+            sdlFallbackHeldButtons.Clear();
+
+            // Do not clear heldButtonsByController here: P10 may already have resumed and
+            // delivered a fresh button event before this timer observes the foreground change.
+            // Keeping the native state avoids dropping that first valid P10 transition.
+            ResetTransientState();
+            DebugLog("[AnikiHelper][OverlayInput][SDL-Fallback] Disabled; native P10 button routing resumed.");
+        }
+
+        private ButtonTransition UpdateSdlFallbackButtonState(ControllerInput button, bool pressed)
+        {
+            var wasHeld = sdlFallbackHeldButtons.Contains(button);
+
+            if (pressed)
+            {
+                sdlFallbackHeldButtons.Add(button);
             }
             else
+            {
+                sdlFallbackHeldButtons.Remove(button);
+            }
+
+            var isHeld = sdlFallbackHeldButtons.Contains(button);
+            return new ButtonTransition
+            {
+                PressedNow = isHeld && !wasHeld,
+                ReleasedNow = !isHeld && wasHeld
+            };
+        }
+
+        private static bool IsSdlButtonPressed(IntPtr controller, int button)
+        {
+            return SDL_GameControllerGetButton(controller, button) != 0;
+        }
+
+        private AnalogState ReadAnalogState()
+        {
+            var result = new AnalogState();
+
+            if (!analogBridgeAvailable || analogControllerIds.Count == 0)
+            {
+                return result;
+            }
+
+            var lockTaken = false;
+
+            try
+            {
+                SDL_LockJoysticks();
+                lockTaken = true;
+
+                foreach (var instanceId in analogControllerIds.ToArray())
+                {
+                    var controller = SDL_GameControllerFromInstanceID(instanceId);
+                    if (controller == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    result.LeftX = SelectAxisWithGreatestMagnitude(
+                        result.LeftX,
+                        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX));
+                    result.LeftY = SelectAxisWithGreatestMagnitude(
+                        result.LeftY,
+                        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY));
+                    result.RightX = SelectAxisWithGreatestMagnitude(
+                        result.RightX,
+                        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX));
+                    result.RightY = SelectAxisWithGreatestMagnitude(
+                        result.RightY,
+                        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY));
+                    result.LeftTrigger = Math.Max(
+                        result.LeftTrigger,
+                        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT));
+                    result.RightTrigger = Math.Max(
+                        result.RightTrigger,
+                        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
+                }
+
+                if (!analogBridgeSuccessLogged)
+                {
+                    analogBridgeSuccessLogged = true;
+                    DebugLog(
+                        "[AnikiHelper][OverlayInput][Analog] Reading axes from Playnite-owned SDL controller handles. " +
+                        "No SDL init/open/update/close calls are made by Aniki Helper.");
+                }
+            }
+            catch (DllNotFoundException ex)
+            {
+                DisableAnalogBridge(ex, "SDL2.dll is unavailable");
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                DisableAnalogBridge(ex, "required SDL analog/locking entry point is unavailable");
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][OverlayInput][Analog] Axis read failed.");
+            }
+            finally
+            {
+                if (lockTaken)
+                {
+                    try { SDL_UnlockJoysticks(); } catch { }
+                }
+            }
+
+            return result;
+        }
+
+        private void DisableAnalogBridge(Exception ex, string reason)
+        {
+            if (!analogBridgeAvailable)
+            {
+                return;
+            }
+
+            analogBridgeAvailable = false;
+            logger?.Warn(ex, $"[AnikiHelper] SDL controller bridge disabled because {reason}. Native P10 input remains available whenever Playnite forwards it.");
+        }
+
+        private ButtonTransition UpdateButtonState(OnControllerButtonStateChangedArgs args)
+        {
+            var controllerId = args.Controller?.InstanceId ?? int.MinValue;
+
+            // Playnite only emits normal input state changes for controllers it is actively
+            // processing. Registering the InstanceId here means the analog bridge follows the
+            // same controller selection as P10, without trusting or duplicating SDL topology.
+            if (args.Controller != null && analogControllerIds.Add(controllerId))
+            {
+                DebugLog(
+                    $"[AnikiHelper][OverlayInput][P10] Analog controller registered from native input. " +
+                    $"InstanceId={controllerId}, Name='{args.Controller.Name}'.");
+            }
+
+            var wasHeld = IsHeld(args.Button);
+
+            if (!heldButtonsByController.TryGetValue(controllerId, out var buttons))
+            {
+                buttons = new HashSet<ControllerInput>();
+                heldButtonsByController[controllerId] = buttons;
+            }
+
+            if (args.State == ControllerInputState.Pressed)
+            {
+                buttons.Add(args.Button);
+            }
+            else
+            {
+                buttons.Remove(args.Button);
+                if (buttons.Count == 0)
+                {
+                    heldButtonsByController.Remove(controllerId);
+                }
+            }
+
+            var isHeld = IsHeld(args.Button);
+            return new ButtonTransition
+            {
+                PressedNow = isHeld && !wasHeld,
+                ReleasedNow = !isHeld && wasHeld
+            };
+        }
+
+        private bool IsHeld(ControllerInput button)
+        {
+            if (sdlFallbackHeldButtons.Contains(button))
+            {
+                return true;
+            }
+
+            foreach (var buttons in heldButtonsByController.Values)
+            {
+                if (buttons.Contains(button))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void UpdatePressTimestamps(ControllerInput button, bool pressedNow)
+        {
+            if (!pressedNow)
+            {
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            switch (button)
+            {
+                case ControllerInput.Start:
+                    lastStartPressedTime = now;
+                    break;
+                case ControllerInput.Back:
+                    lastBackPressedTime = now;
+                    break;
+                case ControllerInput.Y:
+                    lastYPressedTime = now;
+                    break;
+            }
+        }
+
+        private void UpdateLeftStickSoloCandidate(ControllerInput button, ButtonTransition transition)
+        {
+            var now = DateTime.UtcNow;
+
+            if (button == ControllerInput.LeftStick && transition.PressedNow)
+            {
+                leftStickSoloClickCandidate = true;
+                leftStickSoloPressedAt = now;
+            }
+
+            // L3 is shared by L3+R3 keyboard and Start+L3 mouse mode. Any chord partner
+            // cancels the solo-click candidate exactly like the previous SDL implementation.
+            if (leftStickSoloClickCandidate &&
+                (IsHeld(ControllerInput.RightStick) || IsHeld(ControllerInput.Start)))
+            {
+                leftStickSoloClickCandidate = false;
+            }
+        }
+
+        private void TryRaiseLeftStickSoloClick()
+        {
+            var heldMs = leftStickSoloPressedAt == DateTime.MinValue
+                ? double.MaxValue
+                : (DateTime.UtcNow - leftStickSoloPressedAt).TotalMilliseconds;
+
+            var raise = leftStickSoloClickCandidate &&
+                        heldMs >= 0 &&
+                        heldMs <= LeftStickSoloClickMaxDurationMs;
+
+            leftStickSoloClickCandidate = false;
+            leftStickSoloPressedAt = DateTime.MinValue;
+
+            if (!raise)
+            {
+                return;
+            }
+
+            try
+            {
+                LeftStickClicked?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                DebugLog(ex, "[AnikiHelper][OverlayInput][P10] L3 short-click listener failed.");
+            }
+        }
+
+        private void RouteOverlayButton(ControllerInput button)
+        {
+            ControllerInput? routed = null;
+
+            switch (button)
+            {
+                case ControllerInput.DPadLeft:
+                case ControllerInput.DPadRight:
+                case ControllerInput.DPadUp:
+                case ControllerInput.DPadDown:
+                case ControllerInput.A:
+                case ControllerInput.X:
+                case ControllerInput.Y:
+                case ControllerInput.Start:
+                    routed = button;
+                    break;
+
+                case ControllerInput.B:
+                case ControllerInput.Back:
+                    routed = ControllerInput.B;
+                    break;
+            }
+
+            if (!routed.HasValue)
+            {
+                return;
+            }
+
+            DebugLog($"[AnikiHelper][OverlayInput] Overlay button pressed: {button} -> {routed.Value}.");
+            onOverlayButtonPressed?.Invoke(routed.Value);
+        }
+
+        private void RouteBrowserButton(ControllerInput button, ButtonTransition transition)
+        {
+            var guide = IsHeld(ControllerInput.Guide);
+            var start = IsHeld(ControllerInput.Start);
+            var back = IsHeld(ControllerInput.Back);
+            var y = IsHeld(ControllerInput.Y);
+            var x = IsHeld(ControllerInput.X);
+            var leftStick = IsHeld(ControllerInput.LeftStick);
+            var rightStick = IsHeld(ControllerInput.RightStick);
+
+            var browserShortcutChordHeld = IsBrowserShortcutChordHeld(
+                guide,
+                start,
+                back,
+                y,
+                x,
+                leftStick,
+                rightStick);
+
+            if (browserShortcutChordHeld)
+            {
+                browserShortcutSuppressionActive = true;
+            }
+
+            if (button == ControllerInput.Back && transition.PressedNow)
+            {
+                browserBackPressPending = true;
+                browserBackChordConsumed = false;
+            }
+
+            if (browserBackPressPending && back &&
+                (guide || start || y || x || leftStick || rightStick))
+            {
+                browserBackChordConsumed = true;
+                browserShortcutSuppressionActive = true;
+            }
+
+            var closePressedNow = button == ControllerInput.Back &&
+                                  transition.ReleasedNow &&
+                                  browserBackPressPending &&
+                                  !browserBackChordConsumed;
+
+            if (button == ControllerInput.Back && transition.ReleasedNow)
             {
                 browserBackPressPending = false;
                 browserBackChordConsumed = false;
             }
 
-            if (HandleGamepadMouseShortcut(
-                guide,
-                start,
-                back,
-                y,
-                leftStick,
-                rightStick))
+            var suppressKeyboardButton = x && (back || guide);
+            var suppressAddressButton = y && (back || guide);
+            var suppressEnterButton = start && (back || leftStick);
+
+            // Ignore threshold stick events here; browser analog input comes from the axis bridge.
+            var shouldDispatchToBrowser =
+                button == ControllerInput.A ||
+                closePressedNow ||
+                (transition.PressedNow &&
+                 (button == ControllerInput.B ||
+                  button == ControllerInput.X ||
+                  button == ControllerInput.Y ||
+                  button == ControllerInput.Start ||
+                  button == ControllerInput.LeftShoulder ||
+                  button == ControllerInput.RightShoulder ||
+                  button == ControllerInput.DPadUp ||
+                  button == ControllerInput.DPadDown ||
+                  button == ControllerInput.DPadLeft ||
+                  button == ControllerInput.DPadRight));
+
+            if (!shouldDispatchToBrowser)
             {
-                onGamepadMouseSuspendInput?.Invoke();
                 return;
             }
 
-            if (HandleVirtualKeyboardShortcut(
-                guide,
-                back,
-                x,
-                leftStick,
-                rightStick,
-                guidePressedNow,
-                backPressedNow,
-                xPressedNow))
+            onWebBrowserInput?.Invoke(new WebBrowserGamepadInputState
             {
-                onGamepadMouseSuspendInput?.Invoke();
-                return;
+                LeftClick = IsHeld(ControllerInput.A),
+                ActivatePressed = button == ControllerInput.A && transition.PressedNow,
+                BackPressed = button == ControllerInput.B && transition.PressedNow,
+                ClosePressed = closePressedNow,
+                KeyboardPressed = button == ControllerInput.X && transition.PressedNow && !suppressKeyboardButton,
+                AddressPressed = button == ControllerInput.Y && transition.PressedNow && !suppressAddressButton,
+                EnterPressed = button == ControllerInput.Start && transition.PressedNow && !suppressEnterButton,
+                PreviousPressed = button == ControllerInput.LeftShoulder && transition.PressedNow,
+                NextPressed = button == ControllerInput.RightShoulder && transition.PressedNow,
+                DPadUpPressed = button == ControllerInput.DPadUp && transition.PressedNow,
+                DPadDownPressed = button == ControllerInput.DPadDown && transition.PressedNow,
+                DPadLeftPressed = button == ControllerInput.DPadLeft && transition.PressedNow,
+                DPadRightPressed = button == ControllerInput.DPadRight && transition.PressedNow
+            });
+        }
+
+        private bool HandleBrowserPostCloseSuppression()
+        {
+            if (!browserShortcutSuppressionActive)
+            {
+                browserBackPressPending = false;
+                browserBackChordConsumed = false;
+                return false;
             }
 
-            if (isGamepadMouseActive?.Invoke() == true)
-            {
-                onGamepadMouseInput?.Invoke(new GamepadMouseInputState
-                {
-                    RightX = rightAxisX,
-                    RightY = rightAxisY,
-                    LeftY = leftAxisY,
-                    LeftTrigger = leftTrigger,
-                    RightTrigger = rightTrigger,
-                    LeftClick = a,
-                    RightClick = x
-                });
-            }
-
-            var shortcut = settings?.InGameOverlayControllerShortcut ?? "StartBack";
-
-            // Release the latch as soon as the selected chord is no longer physically held.
-            // Previously it was reset only when Guide, Start, Back and Y were all released in
-            // the same polling frame. A single button reported as lingering by a game/driver
-            // could therefore make several following shortcut attempts appear to be ignored.
-            var selectedChordHeld = string.Equals(shortcut, "BackY", StringComparison.OrdinalIgnoreCase)
-                ? back && y
-                : string.Equals(shortcut, "StartBack", StringComparison.OrdinalIgnoreCase)
-                    ? start && back
-                    : guide;
-
-            if (!selectedChordHeld)
+            if (IsAnyBrowserChordButtonHeld())
             {
                 shortcutHeld = false;
+                ResetVirtualKeyboardShortcutState();
+                ResetGamepadMouseShortcutState();
+                onGamepadMouseSuspendInput?.Invoke();
+                return true;
             }
 
-            if (!guide && !start && !back && !y && !guideReleasedNow)
-            {
-                return;
-            }
+            ResetBrowserShortcutState();
+            return false;
+        }
 
-            if (shortcutHeld)
-            {
-                return;
-            }
-
-            if (string.Equals(shortcut, "Guide", StringComparison.OrdinalIgnoreCase))
-            {
-                var virtualKeyboardUsesGuideX = string.Equals(
-                    settings?.InGameOverlayVirtualKeyboardShortcut,
-                    "GuideX",
-                    StringComparison.OrdinalIgnoreCase);
-                var gamepadMouseUsesGuideY = string.Equals(
-                    settings?.InGameOverlayGamepadMouseShortcut,
-                    "GuideY",
-                    StringComparison.OrdinalIgnoreCase);
-                var guideIsSharedWithCombo = virtualKeyboardUsesGuideX || gamepadMouseUsesGuideY;
-
-                if (guidePressedNow)
-                {
-                    guidePressedAt = DateTime.UtcNow;
-                    DebugLog("[AnikiHelper][OverlayInput] SDL Guide pressed.");
-
-                    // When Guide is not shared with the virtual-keyboard shortcut, react on
-                    // the press edge instead of waiting for the release. The Guide release
-                    // state can be reported late or missed by some games/input layers.
-                    if (!guideIsSharedWithCombo)
-                    {
-                        guidePressedAt = null;
-                        shortcutHeld = true;
-                        DebugLog("[AnikiHelper][OverlayInput] Guide shortcut detected on press.");
-                        TriggerShortcut();
-                    }
-
-                    return;
-                }
-
-                if (guideIsSharedWithCombo && guide && guidePressedAt.HasValue)
-                {
-                    var heldMs = (DateTime.UtcNow - guidePressedAt.Value).TotalMilliseconds;
-
-                    // Give Guide+X a short window to complete. If X never arrives, open the
-                    // overlay while Guide is still held instead of relying solely on release.
-                    if (heldMs >= GuideComboGraceMs)
-                    {
-                        guidePressedAt = null;
-                        shortcutHeld = true;
-                        DebugLog($"[AnikiHelper][OverlayInput] Guide shortcut detected after combo grace. HeldMs={heldMs:0}");
-                        TriggerShortcut();
-                    }
-
-                    return;
-                }
-
-                if (guideReleasedNow && guidePressedAt.HasValue)
-                {
-                    var heldMs = (DateTime.UtcNow - guidePressedAt.Value).TotalMilliseconds;
-                    guidePressedAt = null;
-                    shortcutHeld = true;
-                    DebugLog($"[AnikiHelper][OverlayInput] Guide shortcut detected on release. HeldMs={heldMs:0}");
-                    TriggerShortcut();
-                    return;
-                }
-
-                return;
-            }
-
-            if (IsShortcutTriggered(guide, start, back, y, guidePressedNow, startPressedNow, backPressedNow, yPressedNow))
-            {
-                shortcutHeld = true;
-                TriggerShortcut();
-            }
+        private bool IsAnyBrowserChordButtonHeld()
+        {
+            return IsHeld(ControllerInput.Guide) ||
+                   IsHeld(ControllerInput.Start) ||
+                   IsHeld(ControllerInput.Back) ||
+                   IsHeld(ControllerInput.Y) ||
+                   IsHeld(ControllerInput.X) ||
+                   IsHeld(ControllerInput.LeftStick) ||
+                   IsHeld(ControllerInput.RightStick);
         }
 
         private bool IsBrowserShortcutChordHeld(
@@ -872,8 +1072,6 @@ namespace AnikiHelper.Services.InGameOverlay
                         : !string.Equals(keyboardShortcut, "Disabled", StringComparison.OrdinalIgnoreCase) &&
                           leftStick && rightStick;
 
-            // Also reserve the controller combinations used by the main overlay shortcut.
-            // They must never be interpreted as a direct browser-close press.
             var overlayShortcut = settings?.InGameOverlayControllerShortcut ?? "StartBack";
             var overlayChordHeld =
                 string.Equals(overlayShortcut, "BackY", StringComparison.OrdinalIgnoreCase)
@@ -885,50 +1083,28 @@ namespace AnikiHelper.Services.InGameOverlay
             return mouseChordHeld || keyboardChordHeld || overlayChordHeld;
         }
 
-        private void ResetBrowserShortcutState()
-        {
-            browserBackPressPending = false;
-            browserBackChordConsumed = false;
-            browserShortcutSuppressionActive = false;
-        }
-
-        private bool HandleGamepadMouseShortcut(
-            bool guide,
-            bool start,
-            bool back,
-            bool y,
-            bool leftStick,
-            bool rightStick)
+        private bool ProcessGamepadMouseShortcut()
         {
             var shortcut = settings?.InGameOverlayGamepadMouseShortcut ?? "BackR3";
 
             if (string.Equals(shortcut, "Disabled", StringComparison.OrdinalIgnoreCase))
             {
                 ResetGamepadMouseShortcutState();
-
-                if (isGamepadMouseActive?.Invoke() == true)
-                {
-                    onGamepadMouseToggle?.Invoke();
-                }
-
                 return false;
             }
 
             bool combinationHeld;
-
             switch (shortcut)
             {
                 case "StartL3":
-                    combinationHeld = start && leftStick;
+                    combinationHeld = IsHeld(ControllerInput.Start) && IsHeld(ControllerInput.LeftStick);
                     break;
-
                 case "GuideY":
-                    combinationHeld = guide && y;
+                    combinationHeld = IsHeld(ControllerInput.Guide) && IsHeld(ControllerInput.Y);
                     break;
-
                 case "BackR3":
                 default:
-                    combinationHeld = back && rightStick;
+                    combinationHeld = IsHeld(ControllerInput.Back) && IsHeld(ControllerInput.RightStick);
                     break;
             }
 
@@ -940,8 +1116,6 @@ namespace AnikiHelper.Services.InGameOverlay
 
             if (string.Equals(shortcut, "GuideY", StringComparison.OrdinalIgnoreCase))
             {
-                // Guide belongs to this chord now. Prevent the normal Guide overlay
-                // action from firing when the buttons are released.
                 guidePressedAt = null;
             }
 
@@ -975,9 +1149,7 @@ namespace AnikiHelper.Services.InGameOverlay
         private void TriggerGamepadMouseToggle()
         {
             var now = DateTime.UtcNow;
-
-            if ((now - lastGamepadMouseShortcutTime).TotalMilliseconds <
-                GamepadMouseShortcutCooldownMs)
+            if ((now - lastGamepadMouseShortcutTime).TotalMilliseconds < GamepadMouseShortcutCooldownMs)
             {
                 return;
             }
@@ -986,24 +1158,16 @@ namespace AnikiHelper.Services.InGameOverlay
 
             try
             {
-                DebugLog("[AnikiHelper][GamepadMouse] Toggle shortcut detected.");
+                DebugLog("[AnikiHelper][GamepadMouse][P10] Toggle shortcut detected.");
                 onGamepadMouseToggle?.Invoke();
             }
             catch (Exception ex)
             {
-                logger?.Warn(ex, "[AnikiHelper] SDL Gamepad Mouse shortcut callback failed.");
+                logger?.Warn(ex, "[AnikiHelper] P10 Gamepad Mouse shortcut callback failed.");
             }
         }
 
-        private bool HandleVirtualKeyboardShortcut(
-            bool guide,
-            bool back,
-            bool x,
-            bool leftStick,
-            bool rightStick,
-            bool guidePressedNow,
-            bool backPressedNow,
-            bool xPressedNow)
+        private bool ProcessVirtualKeyboardShortcut()
         {
             if (isOverlayEnabled != null && !isOverlayEnabled())
             {
@@ -1012,7 +1176,6 @@ namespace AnikiHelper.Services.InGameOverlay
             }
 
             var shortcut = settings?.InGameOverlayVirtualKeyboardShortcut ?? "L3R3Hold";
-
             if (string.Equals(shortcut, "Disabled", StringComparison.OrdinalIgnoreCase))
             {
                 ResetVirtualKeyboardShortcutState();
@@ -1020,84 +1183,62 @@ namespace AnikiHelper.Services.InGameOverlay
             }
 
             bool combinationHeld;
-            bool combinationPressedNow;
+            bool requiresHold;
 
             switch (shortcut)
             {
                 case "BackX":
-                    combinationHeld = back && x;
-                    combinationPressedNow = combinationHeld && (backPressedNow || xPressedNow);
-
-                    if (!combinationHeld)
-                    {
-                        virtualKeyboardShortcutHeld = false;
-                    }
-
-                    virtualKeyboardHoldStartedAt = null;
-
-                    if (combinationPressedNow && !virtualKeyboardShortcutHeld)
-                    {
-                        virtualKeyboardShortcutHeld = true;
-                        TriggerVirtualKeyboardShortcut();
-                        return true;
-                    }
-
-                    return combinationHeld;
-
+                    combinationHeld = IsHeld(ControllerInput.Back) && IsHeld(ControllerInput.X);
+                    requiresHold = false;
+                    break;
                 case "GuideX":
-                    combinationHeld = guide && x;
-                    combinationPressedNow = combinationHeld && (guidePressedNow || xPressedNow);
-
-                    if (!combinationHeld)
-                    {
-                        virtualKeyboardShortcutHeld = false;
-                    }
-
-                    virtualKeyboardHoldStartedAt = null;
-
-                    if (combinationPressedNow && !virtualKeyboardShortcutHeld)
-                    {
-                        // Prevent the normal short-Guide overlay shortcut from firing
-                        // when Guide is released after Guide + X opened the keyboard.
-                        guidePressedAt = null;
-                        virtualKeyboardShortcutHeld = true;
-                        TriggerVirtualKeyboardShortcut();
-                        return true;
-                    }
-
-                    return combinationHeld;
-
+                    combinationHeld = IsHeld(ControllerInput.Guide) && IsHeld(ControllerInput.X);
+                    requiresHold = false;
+                    break;
                 case "L3R3Hold":
                 default:
-                    combinationHeld = leftStick && rightStick;
-
-                    if (!combinationHeld)
-                    {
-                        virtualKeyboardShortcutHeld = false;
-                        virtualKeyboardHoldStartedAt = null;
-                        return false;
-                    }
-
-                    if (virtualKeyboardShortcutHeld)
-                    {
-                        return true;
-                    }
-
-                    if (!virtualKeyboardHoldStartedAt.HasValue)
-                    {
-                        virtualKeyboardHoldStartedAt = DateTime.UtcNow;
-                        return true;
-                    }
-
-                    if ((DateTime.UtcNow - virtualKeyboardHoldStartedAt.Value).TotalMilliseconds >=
-                        VirtualKeyboardHoldDurationMs)
-                    {
-                        virtualKeyboardShortcutHeld = true;
-                        TriggerVirtualKeyboardShortcut();
-                    }
-
-                    return true;
+                    combinationHeld = IsHeld(ControllerInput.LeftStick) && IsHeld(ControllerInput.RightStick);
+                    requiresHold = true;
+                    break;
             }
+
+            if (!combinationHeld)
+            {
+                ResetVirtualKeyboardShortcutState();
+                return false;
+            }
+
+            if (string.Equals(shortcut, "GuideX", StringComparison.OrdinalIgnoreCase))
+            {
+                guidePressedAt = null;
+            }
+
+            if (virtualKeyboardShortcutHeld)
+            {
+                return true;
+            }
+
+            if (!requiresHold)
+            {
+                virtualKeyboardShortcutHeld = true;
+                TriggerVirtualKeyboardShortcut();
+                return true;
+            }
+
+            if (!virtualKeyboardHoldStartedAt.HasValue)
+            {
+                virtualKeyboardHoldStartedAt = DateTime.UtcNow;
+                return true;
+            }
+
+            if ((DateTime.UtcNow - virtualKeyboardHoldStartedAt.Value).TotalMilliseconds >=
+                VirtualKeyboardHoldDurationMs)
+            {
+                virtualKeyboardShortcutHeld = true;
+                TriggerVirtualKeyboardShortcut();
+            }
+
+            return true;
         }
 
         private void ResetVirtualKeyboardShortcutState()
@@ -1109,9 +1250,7 @@ namespace AnikiHelper.Services.InGameOverlay
         private void TriggerVirtualKeyboardShortcut()
         {
             var now = DateTime.UtcNow;
-
-            if ((now - lastVirtualKeyboardShortcutTime).TotalMilliseconds <
-                VirtualKeyboardShortcutCooldownMs)
+            if ((now - lastVirtualKeyboardShortcutTime).TotalMilliseconds < VirtualKeyboardShortcutCooldownMs)
             {
                 return;
             }
@@ -1120,104 +1259,196 @@ namespace AnikiHelper.Services.InGameOverlay
 
             try
             {
+                DebugLog("[AnikiHelper][OverlayInput][P10] Virtual keyboard shortcut detected.");
                 onVirtualKeyboardShortcutPressed?.Invoke();
             }
             catch (Exception ex)
             {
-                logger?.Warn(ex, "[AnikiHelper] SDL virtual keyboard shortcut callback failed.");
+                logger?.Warn(ex, "[AnikiHelper] P10 virtual keyboard shortcut callback failed.");
             }
         }
 
-        private short ReadAxis(IntPtr controller, int axis)
-        {
-            try
-            {
-                return SDL_GameControllerGetAxis(controller, axis);
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-
-        private static short SelectAxisWithGreatestMagnitude(short current, short candidate)
-        {
-            return Math.Abs((int)candidate) > Math.Abs((int)current)
-                ? candidate
-                : current;
-        }
-
-        private bool IsPressed(IntPtr controller, int button)
-        {
-            try
-            {
-                return SDL_GameControllerGetButton(controller, button) != 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool IsShortcutTriggered(
-            bool guide,
-            bool start,
-            bool back,
-            bool y,
-            bool guidePressedNow,
-            bool startPressedNow,
-            bool backPressedNow,
-            bool yPressedNow)
+        private bool ProcessOverlayShortcutEvent(ControllerInput button, ButtonTransition transition)
         {
             if (isOverlayEnabled != null && !isOverlayEnabled())
             {
+                shortcutHeld = false;
+                guidePressedAt = null;
                 return false;
             }
 
             var shortcut = settings?.InGameOverlayControllerShortcut ?? "StartBack";
-
             if (string.Equals(shortcut, "Disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                shortcutHeld = false;
+                guidePressedAt = null;
+                return false;
+            }
+
+            if (!IsSelectedOverlayChordHeld(shortcut))
+            {
+                shortcutHeld = false;
+            }
+
+            if (string.Equals(shortcut, "Guide", StringComparison.OrdinalIgnoreCase))
+            {
+                if (button != ControllerInput.Guide)
+                {
+                    return false;
+                }
+
+                if (transition.PressedNow)
+                {
+                    guidePressedAt = DateTime.UtcNow;
+
+                    if (!IsGuideSharedWithAnotherShortcut())
+                    {
+                        guidePressedAt = null;
+                        shortcutHeld = true;
+                        TriggerShortcut("Guide press");
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                if (transition.ReleasedNow && guidePressedAt.HasValue)
+                {
+                    guidePressedAt = null;
+                    shortcutHeld = true;
+                    TriggerShortcut("Guide release");
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (!transition.PressedNow || shortcutHeld)
             {
                 return false;
             }
 
-            switch (shortcut)
+            bool triggered;
+            if (string.Equals(shortcut, "BackY", StringComparison.OrdinalIgnoreCase))
             {
-                case "Guide":
+                if (button != ControllerInput.Back && button != ControllerInput.Y)
+                {
                     return false;
-
-                case "BackY":
-                {
-                    var directChord = back && y && (backPressedNow || yPressedNow);
-                    var graceChord = (backPressedNow || yPressedNow) &&
-                                     ArePressesWithinGrace(lastBackPressedTime, lastYPressedTime);
-
-                    if (directChord || graceChord)
-                    {
-                        DebugLog(
-                            $"[AnikiHelper][OverlayInput] Back+Y shortcut detected. " +
-                            $"Direct={directChord}, Grace={graceChord}, Back={back}, Y={y}");
-                    }
-
-                    return directChord || graceChord;
                 }
 
-                case "StartBack":
-                default:
+                var directChord = IsHeld(ControllerInput.Back) && IsHeld(ControllerInput.Y);
+                var graceChord = ArePressesWithinGrace(lastBackPressedTime, lastYPressedTime);
+                triggered = directChord || graceChord;
+            }
+            else
+            {
+                if (button != ControllerInput.Start && button != ControllerInput.Back)
                 {
-                    var directChord = start && back && (startPressedNow || backPressedNow);
-                    var graceChord = (startPressedNow || backPressedNow) &&
-                                     ArePressesWithinGrace(lastStartPressedTime, lastBackPressedTime);
-
-                    if (directChord || graceChord)
-                    {
-                        DebugLog(
-                            $"[AnikiHelper][OverlayInput] Start+Back shortcut detected. " +
-                            $"Direct={directChord}, Grace={graceChord}, Start={start}, Back={back}");
-                    }
-
-                    return directChord || graceChord;
+                    return false;
                 }
+
+                var directChord = IsHeld(ControllerInput.Start) && IsHeld(ControllerInput.Back);
+                var graceChord = ArePressesWithinGrace(lastStartPressedTime, lastBackPressedTime);
+                triggered = directChord || graceChord;
+            }
+
+            if (!triggered)
+            {
+                return false;
+            }
+
+            shortcutHeld = true;
+            TriggerShortcut(shortcut);
+            return true;
+        }
+
+        private void ProcessGuideShortcutGrace()
+        {
+            if (!guidePressedAt.HasValue || shortcutHeld)
+            {
+                return;
+            }
+
+            if (isOverlayEnabled != null && !isOverlayEnabled())
+            {
+                guidePressedAt = null;
+                return;
+            }
+
+            if (!string.Equals(
+                settings?.InGameOverlayControllerShortcut,
+                "Guide",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                guidePressedAt = null;
+                return;
+            }
+
+            if (!IsHeld(ControllerInput.Guide))
+            {
+                return;
+            }
+
+            if (!IsGuideSharedWithAnotherShortcut())
+            {
+                return;
+            }
+
+            if ((DateTime.UtcNow - guidePressedAt.Value).TotalMilliseconds < GuideComboGraceMs)
+            {
+                return;
+            }
+
+            guidePressedAt = null;
+            shortcutHeld = true;
+            TriggerShortcut("Guide combo grace");
+        }
+
+        private bool IsGuideSharedWithAnotherShortcut()
+        {
+            return string.Equals(
+                       settings?.InGameOverlayVirtualKeyboardShortcut,
+                       "GuideX",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(
+                       settings?.InGameOverlayGamepadMouseShortcut,
+                       "GuideY",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsSelectedOverlayChordHeld(string shortcut)
+        {
+            if (string.Equals(shortcut, "BackY", StringComparison.OrdinalIgnoreCase))
+            {
+                return IsHeld(ControllerInput.Back) && IsHeld(ControllerInput.Y);
+            }
+
+            if (string.Equals(shortcut, "Guide", StringComparison.OrdinalIgnoreCase))
+            {
+                return IsHeld(ControllerInput.Guide);
+            }
+
+            return IsHeld(ControllerInput.Start) && IsHeld(ControllerInput.Back);
+        }
+
+        private void TriggerShortcut(string source)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - lastShortcutTime).TotalMilliseconds < 500)
+            {
+                return;
+            }
+
+            lastShortcutTime = now;
+
+            try
+            {
+                DebugLog($"[AnikiHelper][OverlayInput][P10] Overlay shortcut detected. Source={source}.");
+                onShortcutPressed?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper] P10 controller overlay shortcut callback failed.");
             }
         }
 
@@ -1231,25 +1462,67 @@ namespace AnikiHelper.Services.InGameOverlay
             return Math.Abs((firstPress - secondPress).TotalMilliseconds) <= ShortcutChordGraceMs;
         }
 
-        private void TriggerShortcut()
+        private static short SelectAxisWithGreatestMagnitude(short current, short candidate)
         {
-            var now = DateTime.Now;
+            return Math.Abs((int)candidate) > Math.Abs((int)current)
+                ? candidate
+                : current;
+        }
 
-            if ((now - lastShortcutTime).TotalMilliseconds < 500)
-            {
-                return;
-            }
+        private void ResetBrowserShortcutState()
+        {
+            browserBackPressPending = false;
+            browserBackChordConsumed = false;
+            browserShortcutSuppressionActive = false;
+        }
 
-            lastShortcutTime = now;
-            
+        private void ResetTransientStateAfterTopologyChange()
+        {
+            shortcutHeld = false;
+            guidePressedAt = null;
+            ResetVirtualKeyboardShortcutState();
+            ResetGamepadMouseShortcutState();
+            ResetBrowserShortcutState();
+            leftStickSoloClickCandidate = false;
+            leftStickSoloPressedAt = DateTime.MinValue;
+            onGamepadMouseSuspendInput?.Invoke();
+        }
 
+        private void ResetTransientState()
+        {
+            ResetTransientStateAfterTopologyChange();
+            lastStartPressedTime = DateTime.MinValue;
+            lastBackPressedTime = DateTime.MinValue;
+            lastYPressedTime = DateTime.MinValue;
+        }
+
+        private void DebugLog(string message)
+        {
             try
             {
-                onShortcutPressed?.Invoke();
+                if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
+                {
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
+                }
             }
-            catch (Exception ex)
+            catch
             {
-                logger?.Warn(ex, "[AnikiHelper] SDL controller shortcut callback failed.");
+                // Debug logging must never affect controller processing.
+            }
+        }
+
+        private void DebugLog(Exception exception, string message)
+        {
+            try
+            {
+                if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
+                {
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
+                }
+            }
+            catch
+            {
+                // Debug logging must never affect controller processing.
             }
         }
 
@@ -1259,33 +1532,18 @@ namespace AnikiHelper.Services.InGameOverlay
         }
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SDL_InitSubSystem(uint flags);
+        private static extern IntPtr SDL_GameControllerFromInstanceID(int joystickInstanceId);
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void SDL_QuitSubSystem(uint flags);
-
-        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SDL_NumJoysticks();
-
-        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SDL_IsGameController(int joystickIndex);
-
-        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr SDL_GameControllerOpen(int joystickIndex);
-
-        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void SDL_GameControllerClose(IntPtr gamecontroller);
-
-        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SDL_GameControllerGetAttached(IntPtr gamecontroller);
-
-        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void SDL_GameControllerUpdate();
+        private static extern short SDL_GameControllerGetAxis(IntPtr gamecontroller, int axis);
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern byte SDL_GameControllerGetButton(IntPtr gamecontroller, int button);
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern short SDL_GameControllerGetAxis(IntPtr gamecontroller, int axis);
+        private static extern void SDL_LockJoysticks();
+
+        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SDL_UnlockJoysticks();
     }
 }

@@ -155,7 +155,7 @@ namespace AnikiHelper.Services.MediaGallery
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper] Failed to check Screenshots Visualizer media availability.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper] Failed to check Screenshots Visualizer media availability.");
             }
 
             return false;
@@ -277,7 +277,7 @@ namespace AnikiHelper.Services.MediaGallery
 
                 setDataMethod.Invoke(pluginDatabase, new[] { gameSettings });
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     "[AnikiHelper] Screenshots Visualizer game data refreshed for " + gameId
                 );
 
@@ -404,7 +404,7 @@ namespace AnikiHelper.Services.MediaGallery
                 }
                 catch (Exception ex)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         ex,
                         "[AnikiHelper] Failed to read Screenshots Visualizer refresh date."
                     );
@@ -421,7 +421,7 @@ namespace AnikiHelper.Services.MediaGallery
             }
             catch (Exception ex)
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     ex,
                     "[AnikiHelper] Failed to get Screenshots Visualizer refresh stamp."
                 );

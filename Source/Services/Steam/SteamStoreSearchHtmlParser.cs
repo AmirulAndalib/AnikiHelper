@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -32,11 +32,7 @@ namespace AnikiHelper.Services
                 }
             }
 
-            // Some Steam recommendation pages expose extra app links outside search_result_row.
-            // For Steam For You, keep those links as extra Steam-provided candidates so the
-            // recommendation service can sort a larger candidate pool by popularity.
-            // For other Store pages, preserve the old behavior and only use app-link fallback
-            // when no normal rows were found.
+            // For You may use extra Steam app links to build a larger candidate pool.
             var isSteamRecommendationSource = IsSteamRecommendationSource(sourceName);
             var shouldAddAppLinkCandidates =
                 results.Count == 0 ||

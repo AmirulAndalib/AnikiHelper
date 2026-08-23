@@ -46,7 +46,7 @@ namespace AnikiHelper.Services
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -61,7 +61,7 @@ namespace AnikiHelper.Services
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -1462,10 +1462,7 @@ namespace AnikiHelper.Services
             var row = (block ?? string.Empty).ToLowerInvariant();
             var text = (name + " " + row).ToLowerInvariant();
 
-            // Important:
-            // Do NOT apply every exclusion keyword to the full Steam row HTML.
-            // Some words like "bundle" can appear in Steam markup/classes and make every paid game look invalid.
-            // Content-type exclusions are title-based; adult/free flags can still use the row HTML.
+            // Content-type exclusions use the title; adult/free flags may use the full row.
             if (TitleLooksLikeNonGameContent(name))
             {
                 return true;

@@ -1,4 +1,4 @@
-using Playnite.SDK.Data;
+﻿using Playnite.SDK.Data;
 using System;
 using System.IO;
 

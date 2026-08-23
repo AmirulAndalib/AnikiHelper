@@ -3,6 +3,7 @@ using AnikiHelper.Services.Achievements;
 using AnikiHelper.Services.AnikiThemeSettings;
 using AnikiHelper.Services.MediaGallery;
 using AnikiHelper.Services.SplashScreen;
+using AnikiHelper.Services.ScreenSaver;
 using AnikiHelper.Services.SteamFriends;
 using Playnite.SDK;
 using Playnite.SDK.Data;
@@ -22,12 +23,15 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using System.Reflection;
 using AnikiHelper.Services.DuplicateHider;
 using AnikiHelper.Services.FirstSetup;
 using AnikiHelper.Services.WebBrowser;
+using AnikiHelper.Services.VideoPlayer;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Windows.Media;
@@ -37,6 +41,89 @@ namespace AnikiHelper
 {
     // DTOs exposés au thème
     // DTOs exposed to the theme
+
+    public sealed class AnikiVideoLibraryPathEntry : ObservableObject
+    {
+        private string path = string.Empty;
+        private string displayName = string.Empty;
+        private bool includeInHome = true;
+        private bool includeRecentlyAdded = true;
+        private bool onlineArtworkEnabled = true;
+        private bool showOptions;
+
+        public string Path
+        {
+            get => path;
+            set => SetValue(ref path, value ?? string.Empty);
+        }
+
+        // Optional friendly label used by Desktop management and Fullscreen source/breadcrumb labels.
+        public string DisplayName
+        {
+            get => displayName;
+            set => SetValue(ref displayName, value ?? string.Empty);
+        }
+
+        // Per-library options. Existing configurations default to enabled.
+        public bool IncludeInHome
+        {
+            get => includeInHome;
+            set => SetValue(ref includeInHome, value);
+        }
+
+        public bool IncludeRecentlyAdded
+        {
+            get => includeRecentlyAdded;
+            set => SetValue(ref includeRecentlyAdded, value);
+        }
+
+        public bool OnlineArtworkEnabled
+        {
+            get => onlineArtworkEnabled;
+            set => SetValue(ref onlineArtworkEnabled, value);
+        }
+
+        [DontSerialize]
+        public bool ShowOptions
+        {
+            get => showOptions;
+            set => SetValue(ref showOptions, value);
+        }
+
+        [DontSerialize]
+        public string EffectiveName
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(DisplayName))
+                {
+                    return DisplayName.Trim();
+                }
+                try
+                {
+                    var normalized = (Path ?? string.Empty).Trim().TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+                    var name = System.IO.Path.GetFileName(normalized);
+                    return string.IsNullOrWhiteSpace(name) ? normalized : name;
+                }
+                catch
+                {
+                    return Path ?? string.Empty;
+                }
+            }
+        }
+
+        public AnikiVideoLibraryPathEntry Clone()
+        {
+            return new AnikiVideoLibraryPathEntry
+            {
+                Path = Path ?? string.Empty,
+                DisplayName = DisplayName ?? string.Empty,
+                IncludeInHome = IncludeInHome,
+                IncludeRecentlyAdded = IncludeRecentlyAdded,
+                OnlineArtworkEnabled = OnlineArtworkEnabled
+            };
+        }
+    }
 
     public class TopPlayedItem
     {
@@ -65,6 +152,27 @@ namespace AnikiHelper
         public string Value { get; set; }
     }
 
+    public class AnikiGameLinkItem
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        public string Host { get; set; } = string.Empty;
+
+        [DontSerialize]
+        public ICommand OpenCommand { get; set; }
+    }
+
+    // One selectable entry in the Hub Features & Apps settings list.
+    // Built-in features use stable builtin:* identifiers, while Playnite Software Tools
+    // keep their existing names as identifiers for backward compatibility.
+    public class AnikiHubShortcutChoice
+    {
+        public string Id { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public bool IsHeader { get; set; }
+        public bool IsSelectable => !IsHeader;
+    }
+
     // Overlay Apps / Software Tools item exposed to the theme.
     public class AnikiOverlayAppItem
     {
@@ -76,15 +184,25 @@ namespace AnikiHelper
         public string WorkingDir { get; set; } = string.Empty;
         public bool IsScript { get; set; }
 
+        // Empty for Playnite Software Tools. Built-in Hub features use a stable builtin:* id.
+        public string ActionId { get; set; } = string.Empty;
+
         [DontSerialize]
         public AppSoftware SourceApp { get; set; }
 
-        public string TypeText => IsScript ? "SCRIPT" : "APP";
+        public bool IsBuiltInFeature => !string.IsNullOrWhiteSpace(ActionId);
+
+        public string TypeText => IsBuiltInFeature ? "FEATURE" : (IsScript ? "SCRIPT" : "APP");
 
         public string Details
         {
             get
             {
+                if (IsBuiltInFeature)
+                {
+                    return string.Empty;
+                }
+
                 if (IsScript)
                 {
                     return "PowerShell script";
@@ -568,6 +686,15 @@ namespace AnikiHelper
 
     public partial class AnikiHelperSettings : ObservableObject, ISettings, System.ComponentModel.INotifyPropertyChanged
     {
+        private const int CurrentHubShortcutsDefaultsVersion = 1;
+
+        private const string HubFeatureWebBrowserId = "builtin:web-browser";
+        private const string HubFeatureMediaGalleryId = "builtin:media-gallery";
+        private const string HubFeatureSteamFriendsId = "builtin:steam-friends";
+        private const string HubFeatureSteamStoreId = "builtin:steam-store";
+        private const string HubFeatureMusicPlayerId = "builtin:music-player";
+        private const string HubFeatureVideoPlayerId = "builtin:video-player";
+
         private readonly global::AnikiHelper.AnikiHelper plugin;
 
         [DontSerialize]
@@ -611,6 +738,9 @@ namespace AnikiHelper
         private ILogger logger;
         [DontSerialize]
         public RelayCommand ClearInGameOverlayNeverSuspendGamesCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand PreviewScreenSaverCommand { get; }
 
         [DontSerialize]
         public RelayCommand<SteamStoreItem> OpenSteamStoreDetailsCommand { get; }
@@ -716,6 +846,9 @@ namespace AnikiHelper
         public RelayCommand OpenScreenshotsWindowCommand { get; }
 
         [DontSerialize]
+        public RelayCommand<object> OpenMediaGalleryFullscreenViewerCommand { get; }
+
+        [DontSerialize]
         public RelayCommand OpenMediaGalleryGamesWindowCommand { get; }
 
         [DontSerialize]
@@ -752,6 +885,10 @@ namespace AnikiHelper
         [DontSerialize]
         public ObservableCollection<string> SoftwareToolNamesForSelection { get; set; }
             = new ObservableCollection<string>();
+
+        [DontSerialize]
+        public ObservableCollection<AnikiHubShortcutChoice> HubShortcutChoices { get; set; }
+            = new ObservableCollection<AnikiHubShortcutChoice>();
 
         [DontSerialize]
         public ObservableCollection<AnikiOverlayAppItem> HubAppItems { get; set; }
@@ -791,10 +928,13 @@ namespace AnikiHelper
                 return;
             }
 
-            var hasResolvedHubApps = HubAppItems != null && HubAppItems.Any(x =>
-                x != null && (x.SourceApp != null || !string.IsNullOrWhiteSpace(x.Path)));
+            var hasUnresolvedSoftwareTool = HubAppItems != null && HubAppItems.Any(x =>
+                x != null &&
+                string.IsNullOrWhiteSpace(x.ActionId) &&
+                x.SourceApp == null &&
+                string.IsNullOrWhiteSpace(x.Path));
 
-            if (HasHubApps && hasResolvedHubApps)
+            if (HasHubApps && !hasUnresolvedSoftwareTool)
             {
                 return;
             }
@@ -1518,10 +1658,7 @@ namespace AnikiHelper
                     return;
                 }
 
-                // Important:
-                // Update the loaded index BEFORE adding items to the visible collection.
-                // This prevents ScrollChanged / SelectionChanged from re-entering this method
-                // and loading the same page again while items are still being added.
+                // Update the loaded index first to avoid re-entrant page loads.
                 CurrentGameMediaLoadedCount = start + nextItems.Count;
                 CurrentGameMediaCanLoadMore = CurrentGameMediaLoadedCount < CurrentGameMediaItems.Count;
 
@@ -1696,7 +1833,206 @@ namespace AnikiHelper
         public RelayCommand OpenDuplicateHiderVersionsWindowCommand { get; }
 
         [DontSerialize]
+        public ObservableCollection<AnikiGameLinkItem> SelectedGameLinks { get; }
+            = new ObservableCollection<AnikiGameLinkItem>();
+
+        // Kept for compatibility with existing theme bindings.
+        // The Game Links button is now always visible and no per-game scan is performed.
+        [DontSerialize]
+        public bool HasSelectedGameLinks => true;
+
+        [DontSerialize]
+        private string selectedGameLinksGameName = string.Empty;
+
+        [DontSerialize]
+        public string SelectedGameLinksGameName
+        {
+            get => selectedGameLinksGameName;
+            set => SetValue(ref selectedGameLinksGameName, value ?? string.Empty);
+        }
+
+        [DontSerialize]
+        public RelayCommand OpenGameLinksWindowCommand { get; }
+
+        private bool isQuickAccessFeaturesOpen = false;
+
+        [DontSerialize]
+        public bool IsQuickAccessFeaturesOpen
+        {
+            get => isQuickAccessFeaturesOpen;
+            set => SetValue(ref isQuickAccessFeaturesOpen, value);
+        }
+
+        [DontSerialize]
+        public RelayCommand OpenQuickAccessFeaturesCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand CloseQuickAccessFeaturesCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand<object> OpenQuickAccessFeatureCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand OpenQuickAccessSoftwareToolsCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand OpenQuickAccessAudioSwitcherCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand OpenQuickAccessUniPlaySongCommand { get; }
+
+        [DontSerialize]
         public AnikiWindowCommandProvider OpenChildWindow { get; }
+
+        // -----------------------------------------------------------------
+        // Achievement action menu context
+        // -----------------------------------------------------------------
+        [DontSerialize]
+        private object selectedAchievementActionItem;
+
+        [DontSerialize]
+        public object SelectedAchievementActionItem
+        {
+            get => selectedAchievementActionItem;
+            private set
+            {
+                if (ReferenceEquals(selectedAchievementActionItem, value))
+                {
+                    return;
+                }
+
+                selectedAchievementActionItem = value;
+                selectedAchievementGoalState = null;
+                selectedAchievementCapstoneState = null;
+                OnPropertyChanged();
+
+                OnPropertyChanged(nameof(SelectedAchievementName));
+                OnPropertyChanged(nameof(SelectedAchievementDescription));
+                OnPropertyChanged(nameof(SelectedAchievementIcon));
+                OnPropertyChanged(nameof(SelectedAchievementIsGoal));
+                OnPropertyChanged(nameof(SelectedAchievementIsCapstone));
+                OnPropertyChanged(nameof(SelectedAchievementUnlocked));
+
+                OnPropertyChanged(nameof(SelectedAchievementCleanCapturePath));
+                OnPropertyChanged(nameof(SelectedAchievementNotificationCapturePath));
+                OnPropertyChanged(nameof(SelectedAchievementFramedCapturePath));
+                OnPropertyChanged(nameof(SelectedAchievementVideoCapturePath));
+
+                OnPropertyChanged(nameof(SelectedAchievementHasCleanCapture));
+                OnPropertyChanged(nameof(SelectedAchievementHasNotificationCapture));
+                OnPropertyChanged(nameof(SelectedAchievementHasFramedCapture));
+                OnPropertyChanged(nameof(SelectedAchievementHasVideoCapture));
+                OnPropertyChanged(nameof(SelectedAchievementHasAnyCapture));
+            }
+        }
+
+        [DontSerialize]
+        public string SelectedAchievementName => GetSelectedAchievementString("Name");
+
+        [DontSerialize]
+        public string SelectedAchievementDescription => GetSelectedAchievementString("Description");
+
+        [DontSerialize]
+        public string SelectedAchievementIcon => GetSelectedAchievementString("Icon");
+
+        [DontSerialize]
+        private bool? selectedAchievementGoalState;
+
+        [DontSerialize]
+        private bool? selectedAchievementCapstoneState;
+
+        // Stable identity used to recover controller focus after PA rebuilds/reorders
+        // DynamicAchievements following a Goal/Capstone write.
+        [DontSerialize]
+        private string selectedAchievementFocusApiName = string.Empty;
+
+        [DontSerialize]
+        private string selectedAchievementFocusName = string.Empty;
+
+        [DontSerialize]
+        public bool SelectedAchievementIsGoal =>
+            selectedAchievementGoalState ?? GetSelectedAchievementBool("IsGoal");
+
+        [DontSerialize]
+        public bool SelectedAchievementIsCapstone =>
+            selectedAchievementCapstoneState ?? GetSelectedAchievementBool("IsCapstone");
+
+        [DontSerialize]
+        public bool SelectedAchievementUnlocked => GetSelectedAchievementBool("Unlocked");
+
+        // These four names intentionally match the properties JDD proposed for
+        // PlayniteAchievements. Reflection keeps Aniki Helper compatible before and
+        // after PA adds them, without taking a compile-time dependency on PA.
+        [DontSerialize]
+        public string SelectedAchievementCleanCapturePath =>
+            GetSelectedAchievementString("CleanCapturePath");
+
+        [DontSerialize]
+        public string SelectedAchievementNotificationCapturePath =>
+            GetSelectedAchievementString("NotificationCapturePath");
+
+        [DontSerialize]
+        public string SelectedAchievementFramedCapturePath =>
+            GetSelectedAchievementString("FramedCapturePath");
+
+        [DontSerialize]
+        public string SelectedAchievementVideoCapturePath =>
+            GetSelectedAchievementString("VideoCapturePath");
+
+        [DontSerialize]
+        public bool SelectedAchievementHasCleanCapture =>
+            IsUsableAchievementCapturePath(SelectedAchievementCleanCapturePath);
+
+        [DontSerialize]
+        public bool SelectedAchievementHasNotificationCapture =>
+            IsUsableAchievementCapturePath(SelectedAchievementNotificationCapturePath);
+
+        [DontSerialize]
+        public bool SelectedAchievementHasFramedCapture =>
+            IsUsableAchievementCapturePath(SelectedAchievementFramedCapturePath);
+
+        [DontSerialize]
+        public bool SelectedAchievementHasVideoCapture =>
+            IsUsableAchievementCapturePath(SelectedAchievementVideoCapturePath);
+
+        [DontSerialize]
+        public bool SelectedAchievementHasAnyCapture =>
+            SelectedAchievementHasCleanCapture ||
+            SelectedAchievementHasNotificationCapture ||
+            SelectedAchievementHasFramedCapture ||
+            SelectedAchievementHasVideoCapture;
+
+        [DontSerialize]
+        private string selectedAchievementCapturePath = string.Empty;
+
+        [DontSerialize]
+        public string SelectedAchievementCapturePath
+        {
+            get => selectedAchievementCapturePath;
+            private set => SetValue(ref selectedAchievementCapturePath, value ?? string.Empty);
+        }
+
+        [DontSerialize]
+        private bool selectedAchievementCaptureIsVideo;
+
+        [DontSerialize]
+        public bool SelectedAchievementCaptureIsVideo
+        {
+            get => selectedAchievementCaptureIsVideo;
+            private set => SetValue(ref selectedAchievementCaptureIsVideo, value);
+        }
+
+        [DontSerialize]
+        public RelayCommand<object> OpenAchievementActionsCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand ToggleSelectedAchievementGoalCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand ToggleSelectedAchievementCapstoneCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand<object> OpenSelectedAchievementCaptureCommand { get; }
 
         [DontSerialize]
         public RelayCommand OpenWebBrowserCommand { get; }
@@ -1832,6 +2168,12 @@ namespace AnikiHelper
                 SetValue(ref hubCurrentPage, newValue);
 
                 NotifyHubPageStateProperties();
+
+                if (newValue == 1 && IsWelcomeHubOpen)
+                {
+                    QueueHubLibraryOverviewWarmup();
+                }
+
                 if (newValue >= 2)
                 {
                     RequestSteamStoreLoad();
@@ -1860,7 +2202,40 @@ namespace AnikiHelper
         }
 
         [DontSerialize]
-        public int HubMaxPage => ShowHubAppsPage ? 10 : 9;
+        public bool ShowHubVideoCenterPage => HubVideoCenterPageEnabled && hubVideoCenterAvailableForSession;
+
+        [DontSerialize]
+        public int HubAppsPageNumber => ShowHubAppsPage ? 2 : 0;
+
+        [DontSerialize]
+        public int HubLibraryOverviewPageNumber => 2 + (ShowHubAppsPage ? 1 : 0);
+
+        [DontSerialize]
+        public int HubLibraryRecommendedPageNumber => HubLibraryOverviewPageNumber + 1;
+
+        [DontSerialize]
+        public int HubVideoCenterPageNumber => ShowHubVideoCenterPage ? HubLibraryRecommendedPageNumber + 1 : 0;
+
+        [DontSerialize]
+        public int HubFriendActivityPageNumber => HubLibraryRecommendedPageNumber + 1 + (ShowHubVideoCenterPage ? 1 : 0);
+
+        [DontSerialize]
+        public int HubLatestCapturesPageNumber => HubFriendActivityPageNumber + 1;
+
+        [DontSerialize]
+        public int HubAchievementMemoriesPageNumber => HubLatestCapturesPageNumber + 1;
+
+        [DontSerialize]
+        public int HubForYouStorePageNumber => HubAchievementMemoriesPageNumber + 1;
+
+        [DontSerialize]
+        public int HubStorePageNumber => HubForYouStorePageNumber + 1;
+
+        [DontSerialize]
+        public int HubUpcomingPageNumber => HubStorePageNumber + 1;
+
+        [DontSerialize]
+        public int HubMaxPage => HubUpcomingPageNumber;
 
         [DontSerialize]
         public string HubCurrentPageTag => $"Page{HubCurrentPage}";
@@ -1896,32 +2271,110 @@ namespace AnikiHelper
         public bool HubIsPage10 => HubCurrentPage == 10;
 
         [DontSerialize]
-        public bool HubIsAppsPage => ShowHubAppsPage && HubCurrentPage == 3;
+        public bool HubIsPage11 => HubCurrentPage == 11;
 
         [DontSerialize]
-        public bool HubIsLibraryRecommendedPage => HubCurrentPage == (ShowHubAppsPage ? 4 : 3);
+        public bool HubIsAppsPage => HubAppsPageNumber > 0 && HubCurrentPage == HubAppsPageNumber;
 
         [DontSerialize]
-        public bool HubIsFriendActivityPage => HubCurrentPage == (ShowHubAppsPage ? 5 : 4);
+        public bool HubIsLibraryOverviewPage => HubCurrentPage == HubLibraryOverviewPageNumber;
 
         [DontSerialize]
-        public bool HubIsLatestCapturesPage => HubCurrentPage == (ShowHubAppsPage ? 6 : 5);
+        public bool HubIsLibraryRecommendedPage => HubCurrentPage == HubLibraryRecommendedPageNumber;
 
         [DontSerialize]
-        public bool HubIsAchievementMemoriesPage => HubCurrentPage == (ShowHubAppsPage ? 7 : 6);
+        public bool HubIsVideoCenterPage => HubVideoCenterPageNumber > 0 && HubCurrentPage == HubVideoCenterPageNumber;
 
         [DontSerialize]
-        public bool HubIsForYouStorePage => HubCurrentPage == (ShowHubAppsPage ? 8 : 7);
+        public bool HubIsFriendActivityPage => HubCurrentPage == HubFriendActivityPageNumber;
 
         [DontSerialize]
-        public bool HubIsStorePage => HubCurrentPage == (ShowHubAppsPage ? 9 : 8);
+        public bool HubIsLatestCapturesPage => HubCurrentPage == HubLatestCapturesPageNumber;
 
         [DontSerialize]
-        public bool HubIsUpcomingPage => HubCurrentPage == (ShowHubAppsPage ? 10 : 9);
+        public bool HubIsAchievementMemoriesPage => HubCurrentPage == HubAchievementMemoriesPageNumber;
+
+        [DontSerialize]
+        public bool HubIsForYouStorePage => HubCurrentPage == HubForYouStorePageNumber;
+
+        [DontSerialize]
+        public bool HubIsStorePage => HubCurrentPage == HubStorePageNumber;
+
+        [DontSerialize]
+        public bool HubIsUpcomingPage => HubCurrentPage == HubUpcomingPageNumber;
+
+        [DontSerialize] public bool HubShowPageDot1 => IsHubPageAvailable(1);
+        [DontSerialize] public bool HubShowPageDot2 => IsHubPageAvailable(2);
+        [DontSerialize] public bool HubShowPageDot3 => IsHubPageAvailable(3);
+        [DontSerialize] public bool HubShowPageDot4 => IsHubPageAvailable(4);
+        [DontSerialize] public bool HubShowPageDot5 => IsHubPageAvailable(5);
+        [DontSerialize] public bool HubShowPageDot6 => IsHubPageAvailable(6);
+        [DontSerialize] public bool HubShowPageDot7 => IsHubPageAvailable(7);
+        [DontSerialize] public bool HubShowPageDot8 => IsHubPageAvailable(8);
+        [DontSerialize] public bool HubShowPageDot9 => IsHubPageAvailable(9);
+        [DontSerialize] public bool HubShowPageDot10 => IsHubPageAvailable(10);
+        [DontSerialize] public bool HubShowPageDot11 => IsHubPageAvailable(11);
+
+        private bool IsHubPageAvailable(int page)
+        {
+            if (page < 1 || page > HubMaxPage) return false;
+            if (page == 1) return true;
+            if (HubAppsPageNumber > 0 && page == HubAppsPageNumber) return ShowHubAppsPage;
+            if (page == HubLibraryOverviewPageNumber || page == HubLibraryRecommendedPageNumber) return true;
+            if (HubVideoCenterPageNumber > 0 && page == HubVideoCenterPageNumber) return ShowHubVideoCenterPage;
+            if (page == HubFriendActivityPageNumber) return ShowHubFriendActivityPage;
+            if (page == HubLatestCapturesPageNumber) return HasHubMemory;
+            if (page == HubAchievementMemoriesPageNumber) return HasHubAchievementMemory;
+            if (page == HubForYouStorePageNumber || page == HubStorePageNumber || page == HubUpcomingPageNumber) return true;
+            return false;
+        }
+
+        private void NotifyHubPageDotProperties()
+        {
+            OnPropertyChanged(nameof(HubShowPageDot1));
+            OnPropertyChanged(nameof(HubShowPageDot2));
+            OnPropertyChanged(nameof(HubShowPageDot3));
+            OnPropertyChanged(nameof(HubShowPageDot4));
+            OnPropertyChanged(nameof(HubShowPageDot5));
+            OnPropertyChanged(nameof(HubShowPageDot6));
+            OnPropertyChanged(nameof(HubShowPageDot7));
+            OnPropertyChanged(nameof(HubShowPageDot8));
+            OnPropertyChanged(nameof(HubShowPageDot9));
+            OnPropertyChanged(nameof(HubShowPageDot10));
+            OnPropertyChanged(nameof(HubShowPageDot11));
+        }
+
+        public string GetHubPageScopeName(int page)
+        {
+            if (page <= 1) return "HubTopSection";
+            if (HubAppsPageNumber > 0 && page == HubAppsPageNumber) return "HubAppsSection";
+            if (page == HubLibraryOverviewPageNumber) return "HubThirdSection";
+            if (page == HubLibraryRecommendedPageNumber) return "HubLibraryRecommendedSection";
+            if (HubVideoCenterPageNumber > 0 && page == HubVideoCenterPageNumber) return "HubVideoCenterSection";
+            if (page == HubFriendActivityPageNumber) return "HubFriendActivitySection";
+            if (page == HubLatestCapturesPageNumber) return "HubLatestCapturesSection";
+            if (page == HubAchievementMemoriesPageNumber) return "HubAchievementMemoriesSection";
+            if (page == HubForYouStorePageNumber) return "HubForYouStoreSection";
+            if (page == HubStorePageNumber) return "HubStoreSection";
+            if (page == HubUpcomingPageNumber) return "HubUpcomingSection";
+            return "HubTopSection";
+        }
 
         private void NotifyHubPageStateProperties()
         {
             OnPropertyChanged(nameof(HubCurrentPageTag));
+            OnPropertyChanged(nameof(HubMaxPage));
+            OnPropertyChanged(nameof(ShowHubVideoCenterPage));
+            OnPropertyChanged(nameof(HubAppsPageNumber));
+            OnPropertyChanged(nameof(HubLibraryOverviewPageNumber));
+            OnPropertyChanged(nameof(HubLibraryRecommendedPageNumber));
+            OnPropertyChanged(nameof(HubVideoCenterPageNumber));
+            OnPropertyChanged(nameof(HubFriendActivityPageNumber));
+            OnPropertyChanged(nameof(HubLatestCapturesPageNumber));
+            OnPropertyChanged(nameof(HubAchievementMemoriesPageNumber));
+            OnPropertyChanged(nameof(HubForYouStorePageNumber));
+            OnPropertyChanged(nameof(HubStorePageNumber));
+            OnPropertyChanged(nameof(HubUpcomingPageNumber));
             OnPropertyChanged(nameof(HubIsPage1));
             OnPropertyChanged(nameof(HubIsPage2));
             OnPropertyChanged(nameof(HubIsPage3));
@@ -1932,14 +2385,18 @@ namespace AnikiHelper
             OnPropertyChanged(nameof(HubIsPage8));
             OnPropertyChanged(nameof(HubIsPage9));
             OnPropertyChanged(nameof(HubIsPage10));
+            OnPropertyChanged(nameof(HubIsPage11));
             OnPropertyChanged(nameof(HubIsAppsPage));
+            OnPropertyChanged(nameof(HubIsLibraryOverviewPage));
             OnPropertyChanged(nameof(HubIsLibraryRecommendedPage));
+            OnPropertyChanged(nameof(HubIsVideoCenterPage));
             OnPropertyChanged(nameof(HubIsFriendActivityPage));
             OnPropertyChanged(nameof(HubIsLatestCapturesPage));
             OnPropertyChanged(nameof(HubIsAchievementMemoriesPage));
             OnPropertyChanged(nameof(HubIsForYouStorePage));
             OnPropertyChanged(nameof(HubIsStorePage));
             OnPropertyChanged(nameof(HubIsUpcomingPage));
+            NotifyHubPageDotProperties();
         }
 
         public void SetHubPage(object page)
@@ -1978,11 +2435,126 @@ namespace AnikiHelper
             HubCurrentPage--;
         }
 
+        [DontSerialize]
+        private bool hubVideoCenterAvailableForSession;
+
+        [DontSerialize]
+        private bool hubLibraryOverviewWarmupReady;
+
+        [DontSerialize]
+        public bool HubLibraryOverviewWarmupReady
+        {
+            get => hubLibraryOverviewWarmupReady;
+            private set => SetValue(ref hubLibraryOverviewWarmupReady, value);
+        }
+
+        [DontSerialize]
+        private int hubLibraryOverviewWarmupGeneration;
+
+        private async void QueueHubLibraryOverviewWarmup()
+        {
+            if (!IsWelcomeHubOpen || IsWelcomeHubClosing || HubLibraryOverviewWarmupReady || HubCurrentPage != 1)
+            {
+                return;
+            }
+
+            var generation = ++hubLibraryOverviewWarmupGeneration;
+
+            try
+            {
+                // Let page 1 finish its first layout/render pass before constructing the overview page.
+                await Task.Delay(420);
+
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher == null)
+                {
+                    return;
+                }
+
+                await dispatcher.InvokeAsync(() =>
+                {
+                    if (generation != hubLibraryOverviewWarmupGeneration ||
+                        !IsWelcomeHubOpen ||
+                        IsWelcomeHubClosing ||
+                        HubLibraryOverviewWarmupReady)
+                    {
+                        return;
+                    }
+
+                    HubLibraryOverviewWarmupReady = true;
+                }, DispatcherPriority.Background);
+            }
+            catch
+            {
+                // Warm-up is only an optimization. Never let it affect Hub navigation.
+            }
+        }
+
+        private void ResetHubLibraryOverviewWarmup()
+        {
+            hubLibraryOverviewWarmupGeneration++;
+            HubLibraryOverviewWarmupReady = false;
+        }
+
         private bool isWelcomeHubOpen = true;
         public bool IsWelcomeHubOpen
         {
             get => isWelcomeHubOpen;
-            set => SetValue(ref isWelcomeHubOpen, value);
+            set
+            {
+                var opening = value && !isWelcomeHubOpen;
+                SetValue(ref isWelcomeHubOpen, value);
+
+                if (opening)
+                {
+                    // The Hub renders from local caches immediately, then validates playback
+                    // history off the UI thread. This removes media deleted during the current
+                    // Playnite session without blocking on an offline/sleeping NAS.
+                    VideoPlayer?.ScheduleStaleMediaHistoryCleanup(force: true);
+                    LatchHubVideoCenterPageAvailability();
+                }
+
+                if (value)
+                {
+                    QueueHubLibraryOverviewWarmup();
+                }
+                else
+                {
+                    ResetHubLibraryOverviewWarmup();
+                }
+            }
+        }
+
+        private void VideoPlayer_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (!string.Equals(e?.PropertyName, nameof(AnikiVideoPlayerService.HasHubVideoCenterItems), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            // Do not insert a slide while the user is already traversing the Hub. A newly
+            // populated cache becomes eligible the next time the Hub is opened. If the page was
+            // already latched visible, its four card contents can still refresh in place.
+            if (!IsWelcomeHubOpen)
+            {
+                LatchHubVideoCenterPageAvailability();
+            }
+        }
+
+        private void LatchHubVideoCenterPageAvailability()
+        {
+            var available = VideoPlayer?.HasHubVideoCenterItems == true;
+            if (hubVideoCenterAvailableForSession == available)
+            {
+                OnPropertyChanged(nameof(ShowHubVideoCenterPage));
+                return;
+            }
+
+            hubVideoCenterAvailableForSession = available;
+            OnPropertyChanged(nameof(ShowHubVideoCenterPage));
+            OnPropertyChanged(nameof(HubMaxPage));
+            NotifyHubPageStateProperties();
+            EnsureHubCurrentPageInRange();
         }
 
         [DontSerialize]
@@ -2022,6 +2594,953 @@ namespace AnikiHelper
             set => SetValue(ref isSecondaryMusicWindowOpen, value);
         }
 
+        // Process-wide foreground state for theme audio.
+        // Unlike Window.IsActive, this stays true when focus moves between Playnite
+        // and an Aniki secondary window because both belong to the same WPF application.
+        [DontSerialize]
+        private bool isPlayniteApplicationActive = true;
+
+        [DontSerialize]
+        public bool IsPlayniteApplicationActive
+        {
+            get => isPlayniteApplicationActive;
+            set => SetValue(ref isPlayniteApplicationActive, value);
+        }
+
+        [DontSerialize]
+        private bool isMediaGalleryVideoPlaying = false;
+
+        [DontSerialize]
+        public bool IsMediaGalleryVideoPlaying
+        {
+            get => isMediaGalleryVideoPlaying;
+            set => SetValue(ref isMediaGalleryVideoPlaying, value);
+        }
+
+        // Capture Gallery fullscreen video player. The volume is intentionally
+        // independent from Playnite's background music volume and is persisted.
+        private double mediaGalleryVideoVolume = 0.80;
+        public double MediaGalleryVideoVolume
+        {
+            get => mediaGalleryVideoVolume;
+            set
+            {
+                var clamped = Math.Max(0.0, Math.Min(1.0, value));
+                SetValue(ref mediaGalleryVideoVolume, clamped);
+                MediaGalleryVideoVolumeText = $"VOL {Math.Round(clamped * 100):0}%";
+            }
+        }
+
+        [DontSerialize]
+        private bool isMediaGalleryVideoControlsVisible = true;
+
+        [DontSerialize]
+        public bool IsMediaGalleryVideoControlsVisible
+        {
+            get => isMediaGalleryVideoControlsVisible;
+            set => SetValue(ref isMediaGalleryVideoControlsVisible, value);
+        }
+
+        [DontSerialize]
+        private double mediaGalleryVideoProgress = 0.0;
+
+        [DontSerialize]
+        public double MediaGalleryVideoProgress
+        {
+            get => mediaGalleryVideoProgress;
+            set => SetValue(ref mediaGalleryVideoProgress, Math.Max(0.0, Math.Min(100.0, value)));
+        }
+
+        [DontSerialize]
+        private string mediaGalleryVideoTimeText = "00:00 / --:--";
+
+        [DontSerialize]
+        public string MediaGalleryVideoTimeText
+        {
+            get => mediaGalleryVideoTimeText;
+            set => SetValue(ref mediaGalleryVideoTimeText, value ?? "00:00 / --:--");
+        }
+
+        [DontSerialize]
+        private string mediaGalleryVideoVolumeText = "VOL 80%";
+
+        [DontSerialize]
+        public string MediaGalleryVideoVolumeText
+        {
+            get => mediaGalleryVideoVolumeText;
+            set => SetValue(ref mediaGalleryVideoVolumeText, value ?? string.Empty);
+        }
+
+        [DontSerialize]
+        private string mediaGalleryVideoPlayPauseGlyph = "Ⅱ";
+
+        [DontSerialize]
+        public string MediaGalleryVideoPlayPauseGlyph
+        {
+            get => mediaGalleryVideoPlayPauseGlyph;
+            set => SetValue(ref mediaGalleryVideoPlayPauseGlyph, value ?? "Ⅱ");
+        }
+
+        [DontSerialize]
+        private bool isAnikiVideoPlayerPlaying = false;
+
+        [DontSerialize]
+        public bool IsAnikiVideoPlayerPlaying
+        {
+            get => isAnikiVideoPlayerPlaying;
+            set => SetValue(ref isAnikiVideoPlayerPlaying, value);
+        }
+
+        // Standalone Aniki Video Player volume. Independent from background music.
+        private double anikiVideoPlayerVolume = 0.80;
+        public double AnikiVideoPlayerVolume
+        {
+            get => anikiVideoPlayerVolume;
+            set => SetValue(ref anikiVideoPlayerVolume, Math.Max(0.0, Math.Min(1.0, value)));
+        }
+
+        // Optional network folders exposed by the fullscreen Videos feature.
+        // Credentials are intentionally handled by Windows; Aniki Helper stores only labels/paths.
+        private string videoNetworkLocation1Name = string.Empty;
+        public string VideoNetworkLocation1Name
+        {
+            get => videoNetworkLocation1Name;
+            set => SetValue(ref videoNetworkLocation1Name, value ?? string.Empty);
+        }
+
+        private string videoNetworkLocation1Path = string.Empty;
+        public string VideoNetworkLocation1Path
+        {
+            get => videoNetworkLocation1Path;
+            set => SetValue(ref videoNetworkLocation1Path, value ?? string.Empty);
+        }
+
+        private string videoNetworkLocation2Name = string.Empty;
+        public string VideoNetworkLocation2Name
+        {
+            get => videoNetworkLocation2Name;
+            set => SetValue(ref videoNetworkLocation2Name, value ?? string.Empty);
+        }
+
+        private string videoNetworkLocation2Path = string.Empty;
+        public string VideoNetworkLocation2Path
+        {
+            get => videoNetworkLocation2Path;
+            set => SetValue(ref videoNetworkLocation2Path, value ?? string.Empty);
+        }
+
+        private string videoNetworkLocation3Name = string.Empty;
+        public string VideoNetworkLocation3Name
+        {
+            get => videoNetworkLocation3Name;
+            set => SetValue(ref videoNetworkLocation3Name, value ?? string.Empty);
+        }
+
+        private string videoNetworkLocation3Path = string.Empty;
+        public string VideoNetworkLocation3Path
+        {
+            get => videoNetworkLocation3Path;
+            set => SetValue(ref videoNetworkLocation3Path, value ?? string.Empty);
+        }
+
+        private string videoNetworkLocation4Name = string.Empty;
+        public string VideoNetworkLocation4Name
+        {
+            get => videoNetworkLocation4Name;
+            set => SetValue(ref videoNetworkLocation4Name, value ?? string.Empty);
+        }
+
+        private string videoNetworkLocation4Path = string.Empty;
+        public string VideoNetworkLocation4Path
+        {
+            get => videoNetworkLocation4Path;
+            set => SetValue(ref videoNetworkLocation4Path, value ?? string.Empty);
+        }
+
+        // Optional media libraries used by Aniki Video Center's media-center views.
+        // Empty paths simply hide the matching library; Browse remains available at all times.
+        private string videoMoviesLibraryPath = string.Empty;
+        public string VideoMoviesLibraryPath
+        {
+            get => videoMoviesLibraryPath;
+            set
+            {
+                SetValue(ref videoMoviesLibraryPath, value ?? string.Empty);
+                VideoPlayer?.RefreshLibraryConfiguration();
+            }
+        }
+
+        private string videoSeriesLibraryPath = string.Empty;
+        public string VideoSeriesLibraryPath
+        {
+            get => videoSeriesLibraryPath;
+            set
+            {
+                SetValue(ref videoSeriesLibraryPath, value ?? string.Empty);
+                VideoPlayer?.RefreshLibraryConfiguration();
+            }
+        }
+
+        private string videoAnimeLibraryPath = string.Empty;
+        public string VideoAnimeLibraryPath
+        {
+            get => videoAnimeLibraryPath;
+            set
+            {
+                SetValue(ref videoAnimeLibraryPath, value ?? string.Empty);
+                VideoPlayer?.RefreshLibraryConfiguration();
+            }
+        }
+
+        // Fourth user-defined Video Center library. It is explicitly opt-in so users can remove
+        // the category again without a blank Custom row being recreated behind their back.
+        private bool videoCustomLibraryEnabled;
+        public bool VideoCustomLibraryEnabled
+        {
+            get => videoCustomLibraryEnabled;
+            set
+            {
+                if (videoCustomLibraryEnabled == value)
+                {
+                    return;
+                }
+                SetValue(ref videoCustomLibraryEnabled, value);
+
+                if (!value)
+                {
+                    videoCustomLibraryPath = string.Empty;
+                    if (VideoCustomLibraryPaths != null)
+                    {
+                        VideoCustomLibraryPaths.Clear();
+                        VideoCustomLibraryPaths.Add(new AnikiVideoLibraryPathEntry());
+                    }
+                    OnPropertyChanged(nameof(VideoCustomLibraryPath));
+                }
+                else if (VideoCustomLibraryPaths != null && VideoCustomLibraryPaths.Count == 0)
+                {
+                    VideoCustomLibraryPaths.Add(new AnikiVideoLibraryPathEntry());
+                }
+
+                VideoPlayer?.RefreshLibraryConfiguration();
+            }
+        }
+
+        // The display name is cosmetic only; the stable internal key remains "custom" so
+        // renaming the category never breaks caches, favorites or artwork associations. Content
+        // type controls which detail/scraper pipeline is reused (Movies / TV Shows / Anime).
+        private string videoCustomLibraryPath = string.Empty;
+        public string VideoCustomLibraryPath
+        {
+            get => videoCustomLibraryPath;
+            set
+            {
+                SetValue(ref videoCustomLibraryPath, value ?? string.Empty);
+                VideoPlayer?.RefreshLibraryConfiguration();
+            }
+        }
+
+        private string videoCustomLibraryName = "Custom";
+        public string VideoCustomLibraryName
+        {
+            get => string.IsNullOrWhiteSpace(videoCustomLibraryName) ? "Custom" : videoCustomLibraryName.Trim();
+            set
+            {
+                SetValue(ref videoCustomLibraryName, value ?? string.Empty);
+                VideoPlayer?.RefreshLibraryConfiguration();
+            }
+        }
+
+        private string videoCustomLibraryContentType = "movies";
+        public string VideoCustomLibraryContentType
+        {
+            get => NormalizeCustomLibraryContentType(videoCustomLibraryContentType);
+            set
+            {
+                SetValue(ref videoCustomLibraryContentType, NormalizeCustomLibraryContentType(value));
+                VideoPlayer?.RefreshLibraryConfiguration();
+            }
+        }
+
+        private static string NormalizeCustomLibraryContentType(string value)
+        {
+            switch ((value ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case "series": return "series";
+                case "anime": return "anime";
+                default: return "movies";
+            }
+        }
+
+        // Multi-location Video Center libraries. The legacy single-path properties above are
+        // kept for backward compatibility and mirror the first configured non-empty row.
+        public ObservableCollection<AnikiVideoLibraryPathEntry> VideoMoviesLibraryPaths { get; set; }
+            = new ObservableCollection<AnikiVideoLibraryPathEntry>();
+
+        public ObservableCollection<AnikiVideoLibraryPathEntry> VideoSeriesLibraryPaths { get; set; }
+            = new ObservableCollection<AnikiVideoLibraryPathEntry>();
+
+        public ObservableCollection<AnikiVideoLibraryPathEntry> VideoAnimeLibraryPaths { get; set; }
+            = new ObservableCollection<AnikiVideoLibraryPathEntry>();
+
+        public ObservableCollection<AnikiVideoLibraryPathEntry> VideoCustomLibraryPaths { get; set; }
+            = new ObservableCollection<AnikiVideoLibraryPathEntry>();
+
+        public IReadOnlyList<AnikiVideoLibraryPathEntry> GetVideoLibraryEntries(string kind)
+        {
+            var normalizedKind = (kind ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalizedKind == "custom" && !VideoCustomLibraryEnabled)
+            {
+                return Array.Empty<AnikiVideoLibraryPathEntry>();
+            }
+
+            var collection = GetVideoLibraryPathCollection(kind);
+            if (collection == null)
+            {
+                return Array.Empty<AnikiVideoLibraryPathEntry>();
+            }
+
+            var result = collection
+                .Where(x => x != null && !string.IsNullOrWhiteSpace(x.Path))
+                .GroupBy(x => x.Path.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(x => x.First())
+                .ToList();
+
+            // Migration/fallback for old single-path settings.
+            if (result.Count == 0)
+            {
+                string legacy = string.Empty;
+                switch ((kind ?? string.Empty).Trim().ToLowerInvariant())
+                {
+                    case "movies": legacy = videoMoviesLibraryPath; break;
+                    case "series": legacy = videoSeriesLibraryPath; break;
+                    case "anime": legacy = videoAnimeLibraryPath; break;
+                    case "custom": legacy = videoCustomLibraryPath; break;
+                }
+                if (!string.IsNullOrWhiteSpace(legacy))
+                {
+                    result.Add(new AnikiVideoLibraryPathEntry { Path = legacy.Trim() });
+                }
+            }
+
+            return result;
+        }
+
+        public IReadOnlyList<string> GetVideoLibraryPaths(string kind)
+        {
+            return GetVideoLibraryEntries(kind)
+                .Select(x => x.Path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        public void AddVideoLibraryPath(string kind)
+        {
+            var collection = GetVideoLibraryPathCollection(kind);
+            if (collection == null)
+            {
+                return;
+            }
+
+            collection.Add(new AnikiVideoLibraryPathEntry());
+        }
+
+        public void RemoveVideoLibraryPath(string kind, AnikiVideoLibraryPathEntry entry)
+        {
+            var collection = GetVideoLibraryPathCollection(kind);
+            if (collection == null || entry == null)
+            {
+                return;
+            }
+
+            collection.Remove(entry);
+            if (collection.Count == 0)
+            {
+                if (string.Equals((kind ?? string.Empty).Trim(), "custom", StringComparison.OrdinalIgnoreCase))
+                {
+                    VideoCustomLibraryEnabled = false;
+                }
+                else
+                {
+                    collection.Add(new AnikiVideoLibraryPathEntry());
+                }
+            }
+        }
+
+        private ObservableCollection<AnikiVideoLibraryPathEntry> GetVideoLibraryPathCollection(string kind)
+        {
+            switch ((kind ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case "movies": return VideoMoviesLibraryPaths;
+                case "series": return VideoSeriesLibraryPaths;
+                case "anime": return VideoAnimeLibraryPaths;
+                case "custom": return VideoCustomLibraryPaths;
+                default: return null;
+            }
+        }
+
+        private static ObservableCollection<AnikiVideoLibraryPathEntry> BuildVideoLibraryPathCollection(
+            IEnumerable<AnikiVideoLibraryPathEntry> savedEntries,
+            string legacyPath)
+        {
+            var result = new ObservableCollection<AnikiVideoLibraryPathEntry>();
+            foreach (var entry in savedEntries ?? Enumerable.Empty<AnikiVideoLibraryPathEntry>())
+            {
+                if (entry != null)
+                {
+                    result.Add(entry.Clone());
+                }
+            }
+
+            if (result.Count == 0)
+            {
+                result.Add(new AnikiVideoLibraryPathEntry { Path = legacyPath ?? string.Empty });
+            }
+
+            return result;
+        }
+
+        private void InitializeVideoLibraryPathCollections(AnikiHelperSettings saved)
+        {
+            VideoMoviesLibraryPaths = BuildVideoLibraryPathCollection(saved?.VideoMoviesLibraryPaths, videoMoviesLibraryPath);
+            VideoSeriesLibraryPaths = BuildVideoLibraryPathCollection(saved?.VideoSeriesLibraryPaths, videoSeriesLibraryPath);
+            VideoAnimeLibraryPaths = BuildVideoLibraryPathCollection(saved?.VideoAnimeLibraryPaths, videoAnimeLibraryPath);
+            VideoCustomLibraryPaths = BuildVideoLibraryPathCollection(saved?.VideoCustomLibraryPaths, videoCustomLibraryPath);
+
+            AttachVideoLibraryPathCollection(VideoMoviesLibraryPaths);
+            AttachVideoLibraryPathCollection(VideoSeriesLibraryPaths);
+            AttachVideoLibraryPathCollection(VideoAnimeLibraryPaths);
+            AttachVideoLibraryPathCollection(VideoCustomLibraryPaths);
+            SyncLegacyVideoLibraryPaths();
+        }
+
+        private void AttachVideoLibraryPathCollection(ObservableCollection<AnikiVideoLibraryPathEntry> collection)
+        {
+            if (collection == null)
+            {
+                return;
+            }
+
+            collection.CollectionChanged += VideoLibraryPaths_CollectionChanged;
+            foreach (var entry in collection)
+            {
+                if (entry != null)
+                {
+                    entry.PropertyChanged += VideoLibraryPathEntry_PropertyChanged;
+                }
+            }
+        }
+
+        private void VideoLibraryPaths_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+            {
+                foreach (AnikiVideoLibraryPathEntry entry in e.OldItems)
+                {
+                    if (entry != null)
+                    {
+                        entry.PropertyChanged -= VideoLibraryPathEntry_PropertyChanged;
+                    }
+                }
+            }
+
+            if (e.NewItems != null)
+            {
+                foreach (AnikiVideoLibraryPathEntry entry in e.NewItems)
+                {
+                    if (entry != null)
+                    {
+                        entry.PropertyChanged += VideoLibraryPathEntry_PropertyChanged;
+                    }
+                }
+            }
+
+            NotifyVideoLibraryPathsChanged();
+        }
+
+        private void VideoLibraryPathEntry_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            // ShowOptions is a desktop-settings UI state only. Every persisted library option can
+            // change Home/Recently Added/scanning immediately, so refresh Video Center for those.
+            if (!string.Equals(e?.PropertyName, nameof(AnikiVideoLibraryPathEntry.ShowOptions), StringComparison.Ordinal))
+            {
+                NotifyVideoLibraryPathsChanged();
+            }
+        }
+
+        private void NotifyVideoLibraryPathsChanged()
+        {
+            SyncLegacyVideoLibraryPaths();
+            OnPropertyChanged(nameof(VideoMoviesLibraryPaths));
+            OnPropertyChanged(nameof(VideoSeriesLibraryPaths));
+            OnPropertyChanged(nameof(VideoAnimeLibraryPaths));
+            OnPropertyChanged(nameof(VideoCustomLibraryPaths));
+            VideoPlayer?.RefreshLibraryConfiguration();
+        }
+
+        private void SyncLegacyVideoLibraryPaths()
+        {
+            videoMoviesLibraryPath = GetVideoLibraryPaths("movies").FirstOrDefault() ?? string.Empty;
+            videoSeriesLibraryPath = GetVideoLibraryPaths("series").FirstOrDefault() ?? string.Empty;
+            videoAnimeLibraryPath = GetVideoLibraryPaths("anime").FirstOrDefault() ?? string.Empty;
+            videoCustomLibraryPath = GetVideoLibraryPaths("custom").FirstOrDefault() ?? string.Empty;
+
+            OnPropertyChanged(nameof(VideoMoviesLibraryPath));
+            OnPropertyChanged(nameof(VideoSeriesLibraryPath));
+            OnPropertyChanged(nameof(VideoAnimeLibraryPath));
+            OnPropertyChanged(nameof(VideoCustomLibraryPath));
+        }
+
+        private string videoThumbnailFfmpegPath = string.Empty;
+        public string VideoThumbnailFfmpegPath
+        {
+            get => videoThumbnailFfmpegPath;
+            set => SetValue(ref videoThumbnailFfmpegPath, value ?? string.Empty);
+        }
+
+        private string videoFfprobePath = string.Empty;
+        public string VideoFfprobePath
+        {
+            get => videoFfprobePath;
+            set => SetValue(ref videoFfprobePath, value ?? string.Empty);
+        }
+
+        // Global online artwork scraping switch. Provider selection is automatic.
+        private bool videoOnlineArtworkEnabled = true;
+        public bool VideoOnlineArtworkEnabled
+        {
+            get => videoOnlineArtworkEnabled;
+            set
+            {
+                SetValue(ref videoOnlineArtworkEnabled, value);
+                OnPropertyChanged(nameof(VideoTmdbConfigurationReady));
+                VideoPlayer?.RefreshThumbnailDiagnostics();
+            }
+        }
+
+        // Legacy per-provider switch kept for settings compatibility.
+        // TMDB availability is now controlled by VideoOnlineArtworkEnabled + token presence.
+        private bool videoTmdbArtworkEnabled = false;
+        public bool VideoTmdbArtworkEnabled
+        {
+            get => videoTmdbArtworkEnabled;
+            set
+            {
+                SetValue(ref videoTmdbArtworkEnabled, value);
+                OnPropertyChanged(nameof(VideoTmdbConfigurationReady));
+                VideoPlayer?.RefreshThumbnailDiagnostics();
+            }
+        }
+
+        private string videoTmdbArtworkLanguage = string.Empty;
+        public string VideoTmdbArtworkLanguage
+        {
+            get => videoTmdbArtworkLanguage;
+            set
+            {
+                SetValue(ref videoTmdbArtworkLanguage, NormalizeVideoLanguageCode(value));
+                VideoPlayer?.RefreshThumbnailDiagnostics();
+            }
+        }
+
+        private const string VideoTmdbTokenEncryptionPrefix = "dpapi:tmdb-read-token:v1:";
+        private static readonly byte[] VideoTmdbTokenEntropy =
+            Encoding.UTF8.GetBytes("AnikiHelper.VideoTmdbReadAccessToken.v1");
+
+        private string videoTmdbReadAccessToken = string.Empty;
+
+        // Runtime-only clear text. Only the DPAPI encrypted field is serialized.
+        [DontSerialize]
+        [JsonIgnore]
+        public string VideoTmdbReadAccessToken
+        {
+            get => videoTmdbReadAccessToken;
+            set
+            {
+                var normalizedValue = (value ?? string.Empty).Trim();
+                if (string.Equals(videoTmdbReadAccessToken, normalizedValue, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                SetValue(ref videoTmdbReadAccessToken, normalizedValue);
+
+                if (TryEncryptVideoTmdbToken(normalizedValue, out var encryptedValue))
+                {
+                    VideoTmdbReadAccessTokenEncrypted = encryptedValue;
+                }
+                else
+                {
+                    VideoTmdbReadAccessTokenEncrypted = string.Empty;
+                    logger?.Error("[AnikiHelper][VideoCenter] TMDb API Read Access Token could not be encrypted. It will only remain available for the current session.");
+                }
+
+                OnPropertyChanged(nameof(VideoTmdbConfigurationReady));
+                VideoPlayer?.RefreshThumbnailDiagnostics();
+            }
+        }
+
+        private string videoTmdbReadAccessTokenEncrypted = string.Empty;
+        public string VideoTmdbReadAccessTokenEncrypted
+        {
+            get => videoTmdbReadAccessTokenEncrypted;
+            set => videoTmdbReadAccessTokenEncrypted = value ?? string.Empty;
+        }
+
+        [DontSerialize]
+        private bool VideoTmdbTokenStorageNeedsSave { get; set; }
+
+        [DontSerialize]
+        public bool VideoTmdbConfigurationReady =>
+            VideoOnlineArtworkEnabled && !string.IsNullOrWhiteSpace(VideoTmdbReadAccessToken);
+
+        // Legacy per-provider switches kept for settings compatibility. Runtime provider routing is automatic.
+        private bool videoTvmazeArtworkEnabled = true;
+        public bool VideoTvmazeArtworkEnabled
+        {
+            get => videoTvmazeArtworkEnabled;
+            set
+            {
+                SetValue(ref videoTvmazeArtworkEnabled, value);
+                VideoPlayer?.RefreshThumbnailDiagnostics();
+            }
+        }
+
+        private bool videoAnilistArtworkEnabled = true;
+        public bool VideoAnilistArtworkEnabled
+        {
+            get => videoAnilistArtworkEnabled;
+            set
+            {
+                SetValue(ref videoAnilistArtworkEnabled, value);
+                VideoPlayer?.RefreshThumbnailDiagnostics();
+            }
+        }
+
+        private bool videoAutoPlayNextEnabled = true;
+        public bool VideoAutoPlayNextEnabled
+        {
+            get => videoAutoPlayNextEnabled;
+            set => SetValue(ref videoAutoPlayNextEnabled, value);
+        }
+
+        // Optional playback-language preferences for Aniki Video Center.
+        // Empty preferred language keeps LibVLC's default selection.
+        private string videoPreferredAudioLanguage = string.Empty;
+        public string VideoPreferredAudioLanguage
+        {
+            get => videoPreferredAudioLanguage;
+            set => SetValue(ref videoPreferredAudioLanguage, NormalizeVideoLanguageCode(value));
+        }
+
+        // default = keep LibVLC/container default, off = force subtitles off,
+        // preferred = select a matching subtitle track when available.
+        private string videoSubtitlePreferenceMode = "default";
+        public string VideoSubtitlePreferenceMode
+        {
+            get => videoSubtitlePreferenceMode;
+            set
+            {
+                var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+                if (normalized != "off" && normalized != "preferred")
+                {
+                    normalized = "default";
+                }
+
+                SetValue(ref videoSubtitlePreferenceMode, normalized);
+                OnPropertyChanged(nameof(VideoSubtitleSelection));
+            }
+        }
+
+        private string videoPreferredSubtitleLanguage = string.Empty;
+        public string VideoPreferredSubtitleLanguage
+        {
+            get => videoPreferredSubtitleLanguage;
+            set
+            {
+                SetValue(ref videoPreferredSubtitleLanguage, NormalizeVideoLanguageCode(value));
+                OnPropertyChanged(nameof(VideoSubtitleSelection));
+            }
+        }
+
+        // Single UI value for subtitle behavior:
+        // "default", "off", or an ISO language code such as "fr"/"en".
+        // The two persisted fields above are kept for compatibility with existing settings.
+        [DontSerialize]
+        public string VideoSubtitleSelection
+        {
+            get
+            {
+                if (string.Equals(VideoSubtitlePreferenceMode, "off", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "off";
+                }
+
+                if (string.Equals(VideoSubtitlePreferenceMode, "preferred", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(VideoPreferredSubtitleLanguage))
+                {
+                    return VideoPreferredSubtitleLanguage;
+                }
+
+                return "default";
+            }
+            set
+            {
+                var selection = NormalizeVideoLanguageCode(value);
+                var raw = (value ?? string.Empty).Trim().ToLowerInvariant();
+
+                if (raw == "off")
+                {
+                    VideoPreferredSubtitleLanguage = string.Empty;
+                    VideoSubtitlePreferenceMode = "off";
+                }
+                else if (raw == "default" || string.IsNullOrWhiteSpace(raw))
+                {
+                    VideoPreferredSubtitleLanguage = string.Empty;
+                    VideoSubtitlePreferenceMode = "default";
+                }
+                else
+                {
+                    VideoPreferredSubtitleLanguage = selection;
+                    VideoSubtitlePreferenceMode = string.IsNullOrWhiteSpace(selection)
+                        ? "default"
+                        : "preferred";
+                }
+
+                OnPropertyChanged(nameof(VideoSubtitleSelection));
+            }
+        }
+
+        private static string NormalizeVideoLanguageCode(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalized) ||
+                normalized == "default" ||
+                normalized == "automatic" ||
+                normalized == "auto" ||
+                normalized == "automatique" ||
+                normalized == "predeterminado" ||
+                normalized == "predeterminada")
+            {
+                return string.Empty;
+            }
+
+            switch (normalized)
+            {
+                case "fr":
+                case "fra":
+                case "fre":
+                case "french":
+                case "français":
+                case "francais":
+                case "francés":
+                case "frances":
+                case "francese":
+                case "französisch":
+                case "franzosisch":
+                    return "fr";
+
+                case "en":
+                case "eng":
+                case "english":
+                case "anglais":
+                case "inglés":
+                case "ingles":
+                case "inglese":
+                case "englisch":
+                    return "en";
+
+                case "es":
+                case "spa":
+                case "spanish":
+                case "español":
+                case "espanol":
+                case "espagnol":
+                case "spagnolo":
+                case "spanisch":
+                    return "es";
+
+                case "de":
+                case "deu":
+                case "ger":
+                case "german":
+                case "deutsch":
+                case "allemand":
+                case "alemán":
+                case "aleman":
+                case "tedesco":
+                    return "de";
+
+                case "it":
+                case "ita":
+                case "italian":
+                case "italiano":
+                case "italien":
+                case "italienisch":
+                    return "it";
+
+                case "pt":
+                case "por":
+                case "portuguese":
+                case "português":
+                case "portugues":
+                case "portugais":
+                case "portugués":
+                case "portoghese":
+                    return "pt";
+
+                case "ja":
+                case "jpn":
+                case "japanese":
+                case "japonais":
+                case "japonés":
+                case "japones":
+                case "giapponese":
+                case "japanisch":
+                case "日本語":
+                    return "ja";
+
+                case "ko":
+                case "kor":
+                case "korean":
+                case "coréen":
+                case "coreen":
+                case "coreano":
+                case "koreanisch":
+                case "한국어":
+                    return "ko";
+
+                case "zh":
+                case "zho":
+                case "chi":
+                case "chinese":
+                case "chinois":
+                case "chino":
+                case "cinese":
+                case "chinesisch":
+                case "中文":
+                    return "zh";
+
+                case "ru":
+                case "rus":
+                case "russian":
+                case "russe":
+                case "ruso":
+                case "russo":
+                case "russisch":
+                case "русский":
+                    return "ru";
+
+                case "nl":
+                case "nld":
+                case "dut":
+                case "dutch":
+                case "néerlandais":
+                case "neerlandais":
+                case "holandés":
+                case "holandes":
+                case "olandese":
+                case "niederländisch":
+                case "niederlandisch":
+                    return "nl";
+
+                case "pl":
+                case "pol":
+                case "polish":
+                case "polonais":
+                case "polaco":
+                case "polacco":
+                case "polnisch":
+                case "polski":
+                    return "pl";
+
+                case "cs":
+                case "ces":
+                case "cze":
+                case "czech":
+                case "tchèque":
+                case "tcheque":
+                case "checo":
+                case "ceco":
+                case "tschechisch":
+                case "čeština":
+                    return "cs";
+
+                case "tr":
+                case "tur":
+                case "turkish":
+                case "turc":
+                case "turco":
+                case "türkisch":
+                case "turkisch":
+                case "türkçe":
+                    return "tr";
+
+                case "bg":
+                case "bul":
+                case "bulgarian":
+                case "bulgare":
+                case "búlgaro":
+                case "bulgaro":
+                case "български":
+                    return "bg";
+
+                case "ar":
+                case "ara":
+                case "arabic":
+                case "arabe":
+                case "árabe":
+                case "arabo":
+                case "arabisch":
+                case "العربية":
+                    return "ar";
+
+                case "hi":
+                case "hin":
+                case "hindi":
+                case "हिन्दी":
+                case "हिंदी":
+                    return "hi";
+
+                default:
+                    // Preserve an unknown code/value for forward compatibility. The ComboBox will
+                    // simply show no selection until that language is explicitly supported.
+                    return normalized;
+            }
+        }
+
+        [DontSerialize]
+        private AnikiVideoPlayerService videoPlayer;
+
+        [DontSerialize]
+        public AnikiVideoPlayerService VideoPlayer
+        {
+            get => videoPlayer;
+            internal set
+            {
+                if (ReferenceEquals(videoPlayer, value)) return;
+                if (videoPlayer != null) videoPlayer.PropertyChanged -= VideoPlayer_PropertyChanged;
+                SetValue(ref videoPlayer, value);
+                if (videoPlayer != null) videoPlayer.PropertyChanged += VideoPlayer_PropertyChanged;
+
+                // On startup the Hub can already be visible before Video Center is constructed.
+                // Latch availability once the persistent Video Center Home cache becomes available.
+                if (IsWelcomeHubOpen)
+                {
+                    LatchHubVideoCenterPageAvailability();
+                }
+            }
+        }
+
+        [DontSerialize]
+        private bool isWebBrowserOpen = false;
+
+        [DontSerialize]
+        public bool IsWebBrowserOpen
+        {
+            get => isWebBrowserOpen;
+            set => SetValue(ref isWebBrowserOpen, value);
+        }
+
         private bool openWelcomeHubOnStartup = true;
         public bool OpenWelcomeHubOnStartup
         {
@@ -2029,7 +3548,24 @@ namespace AnikiHelper
             set => SetValue(ref openWelcomeHubOnStartup, value);
         }
 
-        private bool hubAppsEnabled = false;
+        private bool hubVideoCenterPageEnabled = true;
+        public bool HubVideoCenterPageEnabled
+        {
+            get => hubVideoCenterPageEnabled;
+            set
+            {
+                if (hubVideoCenterPageEnabled == value) return;
+                SetValue(ref hubVideoCenterPageEnabled, value);
+                OnPropertyChanged(nameof(ShowHubVideoCenterPage));
+                OnPropertyChanged(nameof(HubMaxPage));
+                NotifyHubPageStateProperties();
+                EnsureHubCurrentPageInRange();
+            }
+        }
+
+        // New installations start with the Hub page enabled and four useful Aniki features.
+        // Existing custom selections are preserved by the one-time migration in the constructor.
+        private bool hubAppsEnabled = true;
         public bool HubAppsEnabled
         {
             get => hubAppsEnabled;
@@ -2041,7 +3577,7 @@ namespace AnikiHelper
             }
         }
 
-        private string hubAppSlot1ToolName = string.Empty;
+        private string hubAppSlot1ToolName = HubFeatureWebBrowserId;
         public string HubAppSlot1ToolName
         {
             get => hubAppSlot1ToolName;
@@ -2052,7 +3588,7 @@ namespace AnikiHelper
             }
         }
 
-        private string hubAppSlot2ToolName = string.Empty;
+        private string hubAppSlot2ToolName = HubFeatureMediaGalleryId;
         public string HubAppSlot2ToolName
         {
             get => hubAppSlot2ToolName;
@@ -2063,7 +3599,7 @@ namespace AnikiHelper
             }
         }
 
-        private string hubAppSlot3ToolName = string.Empty;
+        private string hubAppSlot3ToolName = HubFeatureSteamFriendsId;
         public string HubAppSlot3ToolName
         {
             get => hubAppSlot3ToolName;
@@ -2074,7 +3610,7 @@ namespace AnikiHelper
             }
         }
 
-        private string hubAppSlot4ToolName = string.Empty;
+        private string hubAppSlot4ToolName = HubFeatureSteamStoreId;
         public string HubAppSlot4ToolName
         {
             get => hubAppSlot4ToolName;
@@ -2129,6 +3665,10 @@ namespace AnikiHelper
             }
         }
 
+        // Tracks the one-time migration that enables the redesigned Features & Apps page
+        // only when the previous Hub Apps configuration was still untouched.
+        public int HubShortcutsDefaultsVersion { get; set; }
+
         private string customFilterIconsFolder = string.Empty;
         public string CustomFilterIconsFolder
         {
@@ -2141,6 +3681,36 @@ namespace AnikiHelper
 
                 SetValue(ref customFilterIconsFolder, finalValue);
             }
+        }
+
+        private string customFilterBackgroundsFolder = string.Empty;
+        public string CustomFilterBackgroundsFolder
+        {
+            get => customFilterBackgroundsFolder;
+            set
+            {
+                var finalValue = string.IsNullOrWhiteSpace(value)
+                    ? string.Empty
+                    : value.Trim().Replace("\\", "/").TrimEnd('/');
+
+                SetValue(ref customFilterBackgroundsFolder, finalValue);
+            }
+        }
+
+        private string activeFilterPresetName = string.Empty;
+        [DontSerialize]
+        public string ActiveFilterPresetName
+        {
+            get => activeFilterPresetName;
+            set => SetValue(ref activeFilterPresetName, value ?? string.Empty);
+        }
+
+        private string activeFilterBackgroundPath = string.Empty;
+        [DontSerialize]
+        public string ActiveFilterBackgroundPath
+        {
+            get => activeFilterBackgroundPath;
+            set => SetValue(ref activeFilterBackgroundPath, value ?? string.Empty);
         }
 
         private string customSourceIconsFolder = string.Empty;
@@ -2444,7 +4014,10 @@ namespace AnikiHelper
 
         // Options stats / display 
         private bool includeHidden = false;
+        private bool showDesktopSidebarSettingsShortcut = true;
         private bool enableDebugLogs = false;
+        private DateTime? debugLogsEnabledUtc;
+        private static readonly TimeSpan DebugLogsAutoDisableDuration = TimeSpan.FromHours(24);
         private int topPlayedMax = 10;
         private bool playtimeStoredInHours = false;
         private bool playtimeUseDaysFormat = false;
@@ -2588,6 +4161,41 @@ namespace AnikiHelper
         {
             get => recentPlayedBackgroundPath;
             set => SetValue(ref recentPlayedBackgroundPath, value);
+        }
+
+        private string hubMostPlayedName;
+        public string HubMostPlayedName
+        {
+            get => hubMostPlayedName;
+            set => SetValue(ref hubMostPlayedName, value);
+        }
+
+        private string hubMostPlayedPlaytime;
+        public string HubMostPlayedPlaytime
+        {
+            get => hubMostPlayedPlaytime;
+            set => SetValue(ref hubMostPlayedPlaytime, value);
+        }
+
+        private string hubMostPlayedBackgroundPath;
+        public string HubMostPlayedBackgroundPath
+        {
+            get => hubMostPlayedBackgroundPath;
+            set => SetValue(ref hubMostPlayedBackgroundPath, value);
+        }
+
+        private Guid hubMostPlayedGameId = Guid.Empty;
+        public Guid HubMostPlayedGameId
+        {
+            get => hubMostPlayedGameId;
+            set => SetValue(ref hubMostPlayedGameId, value);
+        }
+
+        private bool hubMostPlayedIsMonthly;
+        public bool HubMostPlayedIsMonthly
+        {
+            get => hubMostPlayedIsMonthly;
+            set => SetValue(ref hubMostPlayedIsMonthly, value);
         }
 
         private string hubRecentAddedName;
@@ -3508,7 +5116,12 @@ namespace AnikiHelper
         public bool ShowHubFriendActivityPage
         {
             get => showHubFriendActivityPage;
-            set => SetValue(ref showHubFriendActivityPage, value);
+            set
+            {
+                if (showHubFriendActivityPage == value) return;
+                SetValue(ref showHubFriendActivityPage, value);
+                NotifyHubPageDotProperties();
+            }
         }
 
         public void EnsureFriendActivityHubRuntimeCollections()
@@ -4183,20 +5796,55 @@ namespace AnikiHelper
             private set => SetValue(ref inGameOverlayNeverSuspendGameItems, value ?? new ObservableCollection<AnikiOverlayNeverSuspendGameItem>());
         }
         #region Options (bindables)
+        public bool ShowDesktopSidebarSettingsShortcut
+        {
+            get => showDesktopSidebarSettingsShortcut;
+            set => SetValue(ref showDesktopSidebarSettingsShortcut, value);
+        }
+
         public bool EnableDebugLogs
         {
             get => enableDebugLogs;
             set
             {
-                var changed = enableDebugLogs != value;
-                SetValue(ref enableDebugLogs, value);
+                if (enableDebugLogs == value)
+                {
+                    return;
+                }
 
-                if (changed && plugin != null)
+                SetValue(ref enableDebugLogs, value);
+                DebugLogsEnabledUtc = value ? DateTime.UtcNow : (DateTime?)null;
+
+                if (plugin != null)
                 {
                     plugin.SavePluginSettings(this);
                 }
             }
         }
+
+        public DateTime? DebugLogsEnabledUtc
+        {
+            get => debugLogsEnabledUtc;
+            set => SetValue(ref debugLogsEnabledUtc, value);
+        }
+
+        private static DateTime NormalizeDebugLogsUtc(DateTime value)
+        {
+            if (value.Kind == DateTimeKind.Utc)
+            {
+                return value;
+            }
+
+            if (value.Kind == DateTimeKind.Local)
+            {
+                return value.ToUniversalTime();
+            }
+
+            // This timestamp has always been written with DateTime.UtcNow. If an older
+            // serializer loads it without a Kind, keep the stored clock value as UTC.
+            return DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        }
+
         public bool IncludeHidden { get => includeHidden; set => SetValue(ref includeHidden, value); }
 
         public int TopPlayedMax
@@ -4253,6 +5901,69 @@ namespace AnikiHelper
             set => SetValue(ref startupIntroVideoEnabled, value);
         }
 
+        private bool screenSaverEnabled = true;
+        public bool ScreenSaverEnabled
+        {
+            get => screenSaverEnabled;
+            set => SetValue(ref screenSaverEnabled, value);
+        }
+
+        private int screenSaverIdleDelayMinutes = 1;
+        public int ScreenSaverIdleDelayMinutes
+        {
+            get => screenSaverIdleDelayMinutes;
+            set => SetValue(ref screenSaverIdleDelayMinutes, Math.Max(1, Math.Min(120, value)));
+        }
+
+        private int screenSaverChangeIntervalSeconds = 15;
+        public int ScreenSaverChangeIntervalSeconds
+        {
+            get => screenSaverChangeIntervalSeconds;
+            set => SetValue(ref screenSaverChangeIntervalSeconds, Math.Max(5, Math.Min(300, value)));
+        }
+
+        private ScreenSaverSource screenSaverSource = global::AnikiHelper.Services.ScreenSaver.ScreenSaverSource.InstalledGames;
+        public ScreenSaverSource ScreenSaverSource
+        {
+            get => screenSaverSource;
+            set => SetValue(ref screenSaverSource, value);
+        }
+
+        private bool screenSaverUseSplashImages = true;
+        public bool ScreenSaverUseSplashImages
+        {
+            get => screenSaverUseSplashImages;
+            set => SetValue(ref screenSaverUseSplashImages, value);
+        }
+
+        private bool screenSaverShowLogo = true;
+        public bool ScreenSaverShowLogo
+        {
+            get => screenSaverShowLogo;
+            set => SetValue(ref screenSaverShowLogo, value);
+        }
+
+        private bool screenSaverShowInfoCard = true;
+        public bool ScreenSaverShowInfoCard
+        {
+            get => screenSaverShowInfoCard;
+            set => SetValue(ref screenSaverShowInfoCard, value);
+        }
+
+        private bool screenSaverAnimateBackground = true;
+        public bool ScreenSaverAnimateBackground
+        {
+            get => screenSaverAnimateBackground;
+            set => SetValue(ref screenSaverAnimateBackground, value);
+        }
+
+        private bool screenSaverUseFadeTransitions = true;
+        public bool ScreenSaverUseFadeTransitions
+        {
+            get => screenSaverUseFadeTransitions;
+            set => SetValue(ref screenSaverUseFadeTransitions, value);
+        }
+
         private bool gameLaunchSplashEnabled = true;
         public bool GameLaunchSplashEnabled
         {
@@ -4265,6 +5976,15 @@ namespace AnikiHelper
         {
             get => gameLaunchSplashShowLogo;
             set => SetValue(ref gameLaunchSplashShowLogo, value);
+        }
+
+        public const double DefaultGameLaunchSplashBackgroundDimming = 95d / 255d;
+
+        private double gameLaunchSplashBackgroundDimming = DefaultGameLaunchSplashBackgroundDimming;
+        public double GameLaunchSplashBackgroundDimming
+        {
+            get => gameLaunchSplashBackgroundDimming;
+            set => SetValue(ref gameLaunchSplashBackgroundDimming, Math.Max(0, Math.Min(0.8, value)));
         }
 
         private bool gameLaunchSplashPauseUniPlaySong = true;
@@ -5203,6 +6923,86 @@ namespace AnikiHelper
 
         public AnikiHelperSettings() { }
 
+        private static bool TryEncryptVideoTmdbToken(string clearText, out string encryptedValue)
+        {
+            encryptedValue = string.Empty;
+
+            if (string.IsNullOrEmpty(clearText))
+            {
+                return true;
+            }
+
+            try
+            {
+                var clearBytes = Encoding.UTF8.GetBytes(clearText);
+                var protectedBytes = ProtectedData.Protect(
+                    clearBytes,
+                    VideoTmdbTokenEntropy,
+                    DataProtectionScope.CurrentUser);
+
+                encryptedValue = VideoTmdbTokenEncryptionPrefix + Convert.ToBase64String(protectedBytes);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryDecryptVideoTmdbToken(string encryptedValue, out string clearText)
+        {
+            clearText = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(encryptedValue))
+            {
+                return true;
+            }
+
+            if (!encryptedValue.StartsWith(VideoTmdbTokenEncryptionPrefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            try
+            {
+                var base64Value = encryptedValue.Substring(VideoTmdbTokenEncryptionPrefix.Length);
+                var protectedBytes = Convert.FromBase64String(base64Value);
+                var clearBytes = ProtectedData.Unprotect(
+                    protectedBytes,
+                    VideoTmdbTokenEntropy,
+                    DataProtectionScope.CurrentUser);
+
+                clearText = Encoding.UTF8.GetString(clearBytes);
+                return true;
+            }
+            catch
+            {
+                clearText = string.Empty;
+                return false;
+            }
+        }
+
+        private void RestoreVideoTmdbTokenFromConfig()
+        {
+            videoTmdbReadAccessToken = string.Empty;
+            VideoTmdbTokenStorageNeedsSave = false;
+
+            if (string.IsNullOrWhiteSpace(VideoTmdbReadAccessTokenEncrypted))
+            {
+                return;
+            }
+
+            if (TryDecryptVideoTmdbToken(VideoTmdbReadAccessTokenEncrypted, out var decryptedValue))
+            {
+                videoTmdbReadAccessToken = decryptedValue ?? string.Empty;
+                return;
+            }
+
+            VideoTmdbReadAccessTokenEncrypted = string.Empty;
+            VideoTmdbTokenStorageNeedsSave = true;
+            logger?.Warn("[AnikiHelper][VideoCenter] The saved TMDb token could not be decrypted on this Windows account. Enter it again in Aniki Helper settings.");
+        }
+
         private static bool TryEncryptSteamWebApiToken(string clearText, out string encryptedValue)
         {
             encryptedValue = string.Empty;
@@ -5439,6 +7239,7 @@ namespace AnikiHelper
                     loadedSettings.RestoreSteamApiKeyFromConfig(
                         Path.Combine(plugin.GetPluginUserDataPath(), "config.json"));
                     loadedSettings.RestoreSteamWebApiTokenFromConfig();
+                    loadedSettings.RestoreVideoTmdbTokenFromConfig();
                 }
 
                 return loadedSettings;
@@ -5473,6 +7274,11 @@ namespace AnikiHelper
         }
 
         public AnikiHelperSettings(global::AnikiHelper.AnikiHelper plugin)
+            : this(plugin, true)
+        {
+        }
+
+        private AnikiHelperSettings(global::AnikiHelper.AnikiHelper plugin, bool loadPersistedSettings)
         {
             this.plugin = plugin;
             logger = LogManager.GetLogger();
@@ -5485,12 +7291,15 @@ namespace AnikiHelper
             ReloadAnikiThemeSettingsCommand = new RelayCommand(() => plugin?.ReloadAnikiThemeSettings());
             SelectAnikiThemeSettingsCategoryCommand = new RelayCommand<string>(p => SelectAnikiThemeSettingsCategory(p));
             ClearInGameOverlayNeverSuspendGamesCommand = new RelayCommand(ClearInGameOverlayNeverSuspendGames);
+            PreviewScreenSaverCommand = new RelayCommand(() => plugin?.PreviewScreenSaver());
 
 
             // Keep the constructor lightweight. Media, memories and achievement caches
             // are warmed after the first fullscreen render, while the full Media Gallery
             // remains lazy-loaded only when the user opens it.
-            var saved = LoadSettingsSafe(plugin);
+            var hubShortcutsDefaultsMigrationApplied = false;
+            var debugLogsStateNeedsSave = false;
+            var saved = loadPersistedSettings ? LoadSettingsSafe(plugin) : null;
             if (saved != null)
             {
                 AnikiThemeSettingsValues = saved.AnikiThemeSettingsValues
@@ -5499,7 +7308,58 @@ namespace AnikiHelper
                 AnikiThemeSettingsSelectedPresets = saved.AnikiThemeSettingsSelectedPresets
                     ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-                EnableDebugLogs = saved.EnableDebugLogs;
+                // Load debug state without using the public setter: using the setter here
+                // would restart the 24-hour timer on every Playnite launch.
+                enableDebugLogs = saved.EnableDebugLogs;
+                debugLogsEnabledUtc = saved.DebugLogsEnabledUtc;
+                showDesktopSidebarSettingsShortcut = saved.ShowDesktopSidebarSettingsShortcut;
+
+                if (enableDebugLogs)
+                {
+                    var nowUtc = DateTime.UtcNow;
+
+                    if (!debugLogsEnabledUtc.HasValue)
+                    {
+                        // Migration for users who already had Debug Mode enabled before the
+                        // auto-expiration feature existed. Give the current troubleshooting
+                        // session a fresh 24-hour window instead of disabling it immediately.
+                        debugLogsEnabledUtc = nowUtc;
+                        debugLogsStateNeedsSave = true;
+                        logger?.Info("[AnikiHelper][Debug] Existing Debug Mode session registered for automatic 24-hour expiration.");
+                    }
+                    else
+                    {
+                        var enabledUtc = NormalizeDebugLogsUtc(debugLogsEnabledUtc.Value);
+
+                        // Protect against an invalid/future timestamp that could otherwise keep
+                        // Debug Mode enabled indefinitely after a clock change or bad config edit.
+                        if (enabledUtc > nowUtc.AddMinutes(5))
+                        {
+                            debugLogsEnabledUtc = nowUtc;
+                            debugLogsStateNeedsSave = true;
+                            logger?.Info("[AnikiHelper][Debug] Debug Mode timestamp was invalid and has been reset.");
+                        }
+                        else if ((nowUtc - enabledUtc) >= DebugLogsAutoDisableDuration)
+                        {
+                            enableDebugLogs = false;
+                            debugLogsEnabledUtc = null;
+                            debugLogsStateNeedsSave = true;
+                            logger?.Info("[AnikiHelper][Debug] Debug Mode automatically disabled after 24 hours.");
+                        }
+                        else if (enabledUtc != debugLogsEnabledUtc.Value ||
+                                 debugLogsEnabledUtc.Value.Kind != DateTimeKind.Utc)
+                        {
+                            debugLogsEnabledUtc = enabledUtc;
+                            debugLogsStateNeedsSave = true;
+                        }
+                    }
+                }
+                else if (debugLogsEnabledUtc.HasValue)
+                {
+                    // Keep the persisted state clean when Debug Mode is off.
+                    debugLogsEnabledUtc = null;
+                    debugLogsStateNeedsSave = true;
+                }
 
                 IncludeHidden = saved.IncludeHidden;
                 TopPlayedMax = saved.TopPlayedMax <= 0 ? 10 : saved.TopPlayedMax;
@@ -5507,6 +7367,7 @@ namespace AnikiHelper
                 PlaytimeUseDaysFormat = saved.PlaytimeUseDaysFormat;
 
                 OpenWelcomeHubOnStartup = saved.OpenWelcomeHubOnStartup;
+                HubVideoCenterPageEnabled = saved.HubVideoCenterPageEnabled;
                 HubAppsEnabled = saved.HubAppsEnabled;
                 HubAppSlot1ToolName = saved.HubAppSlot1ToolName ?? string.Empty;
                 HubAppSlot2ToolName = saved.HubAppSlot2ToolName ?? string.Empty;
@@ -5516,6 +7377,7 @@ namespace AnikiHelper
                 HubAppSlot2BackgroundPath = saved.HubAppSlot2BackgroundPath ?? string.Empty;
                 HubAppSlot3BackgroundPath = saved.HubAppSlot3BackgroundPath ?? string.Empty;
                 HubAppSlot4BackgroundPath = saved.HubAppSlot4BackgroundPath ?? string.Empty;
+                HubShortcutsDefaultsVersion = saved.HubShortcutsDefaultsVersion;
 
                 SteamStoreLanguage = string.IsNullOrWhiteSpace(saved.SteamStoreLanguage) ? "english" : saved.SteamStoreLanguage;
                 SteamStoreRegion = string.IsNullOrWhiteSpace(saved.SteamStoreRegion) ? "US" : saved.SteamStoreRegion;
@@ -5538,6 +7400,7 @@ namespace AnikiHelper
                 NotifyOnConnect = saved.NotifyOnConnect;
 
                 CustomFilterIconsFolder = saved.CustomFilterIconsFolder ?? string.Empty;
+                CustomFilterBackgroundsFolder = saved.CustomFilterBackgroundsFolder ?? string.Empty;
                 CustomSourceIconsFolder = saved.CustomSourceIconsFolder ?? string.Empty;
                 CustomBannerAboveCoverFolder = saved.CustomBannerAboveCoverFolder ?? string.Empty;
                 CustomBannerOnCoverFolder = saved.CustomBannerOnCoverFolder ?? string.Empty;
@@ -5608,6 +7471,17 @@ namespace AnikiHelper
                 SteamUpdatesScanEnabled = saved.SteamUpdatesScanEnabled;
                 AskSteamUpdateCacheAtStartup = saved.AskSteamUpdateCacheAtStartup;
                 StartupIntroVideoEnabled = saved.StartupIntroVideoEnabled;
+                var hasSavedScreenSaverSettings = saved.ScreenSaverIdleDelayMinutes > 0;
+                ScreenSaverEnabled = hasSavedScreenSaverSettings ? saved.ScreenSaverEnabled : true;
+                ScreenSaverIdleDelayMinutes = hasSavedScreenSaverSettings ? saved.ScreenSaverIdleDelayMinutes : 1;
+                ScreenSaverChangeIntervalSeconds = saved.ScreenSaverChangeIntervalSeconds > 0 ? saved.ScreenSaverChangeIntervalSeconds : 15;
+                ScreenSaverSource = hasSavedScreenSaverSettings ? saved.ScreenSaverSource : global::AnikiHelper.Services.ScreenSaver.ScreenSaverSource.InstalledGames;
+                ScreenSaverUseSplashImages = hasSavedScreenSaverSettings ? saved.ScreenSaverUseSplashImages : true;
+                ScreenSaverShowLogo = hasSavedScreenSaverSettings ? saved.ScreenSaverShowLogo : true;
+                ScreenSaverShowInfoCard = hasSavedScreenSaverSettings ? saved.ScreenSaverShowInfoCard : true;
+                ScreenSaverAnimateBackground = hasSavedScreenSaverSettings ? saved.ScreenSaverAnimateBackground : true;
+                ScreenSaverUseFadeTransitions = hasSavedScreenSaverSettings ? saved.ScreenSaverUseFadeTransitions : true;
+
                 GameLaunchSplashEnabled = saved.GameLaunchSplashEnabled;
                 GameLaunchSplashPauseUniPlaySong = saved.GameLaunchSplashPauseUniPlaySong;
                 GameLaunchSplashShowLogo = saved.GameLaunchSplashShowLogo;
@@ -5632,6 +7506,38 @@ namespace AnikiHelper
                 LastSteamRecentCheckUtc = saved.LastSteamRecentCheckUtc;
                 EventSoundsEnabled = saved.EventSoundsEnabled;
                 MediaGalleryProvider = saved.MediaGalleryProvider;
+                AnikiVideoPlayerVolume = saved.AnikiVideoPlayerVolume;
+                VideoNetworkLocation1Name = saved.VideoNetworkLocation1Name ?? string.Empty;
+                VideoNetworkLocation1Path = saved.VideoNetworkLocation1Path ?? string.Empty;
+                VideoNetworkLocation2Name = saved.VideoNetworkLocation2Name ?? string.Empty;
+                VideoNetworkLocation2Path = saved.VideoNetworkLocation2Path ?? string.Empty;
+                VideoNetworkLocation3Name = saved.VideoNetworkLocation3Name ?? string.Empty;
+                VideoNetworkLocation3Path = saved.VideoNetworkLocation3Path ?? string.Empty;
+                VideoNetworkLocation4Name = saved.VideoNetworkLocation4Name ?? string.Empty;
+                VideoNetworkLocation4Path = saved.VideoNetworkLocation4Path ?? string.Empty;
+                VideoMoviesLibraryPath = saved.VideoMoviesLibraryPath ?? string.Empty;
+                VideoSeriesLibraryPath = saved.VideoSeriesLibraryPath ?? string.Empty;
+                VideoAnimeLibraryPath = saved.VideoAnimeLibraryPath ?? string.Empty;
+                // Assign the backing field during migration. The public setter intentionally clears
+                // paths when disabled, but the collections are initialized a little later below.
+                videoCustomLibraryEnabled = saved.VideoCustomLibraryEnabled;
+                VideoCustomLibraryPath = saved.VideoCustomLibraryPath ?? string.Empty;
+                VideoCustomLibraryName = string.IsNullOrWhiteSpace(saved.VideoCustomLibraryName) ? "Custom" : saved.VideoCustomLibraryName;
+                VideoCustomLibraryContentType = saved.VideoCustomLibraryContentType;
+                VideoThumbnailFfmpegPath = saved.VideoThumbnailFfmpegPath ?? string.Empty;
+                VideoFfprobePath = saved.VideoFfprobePath ?? string.Empty;
+                VideoOnlineArtworkEnabled = saved.VideoOnlineArtworkEnabled;
+                VideoTmdbArtworkEnabled = saved.VideoTmdbArtworkEnabled;
+                VideoTmdbArtworkLanguage = saved.VideoTmdbArtworkLanguage ?? string.Empty;
+                VideoTmdbReadAccessToken = saved.VideoTmdbReadAccessToken ?? string.Empty;
+                VideoTvmazeArtworkEnabled = saved.VideoTvmazeArtworkEnabled;
+                VideoAnilistArtworkEnabled = saved.VideoAnilistArtworkEnabled;
+                VideoAutoPlayNextEnabled = saved.VideoAutoPlayNextEnabled;
+                VideoPreferredAudioLanguage = saved.VideoPreferredAudioLanguage ?? string.Empty;
+                VideoSubtitlePreferenceMode = string.IsNullOrWhiteSpace(saved.VideoSubtitlePreferenceMode)
+                    ? "default"
+                    : saved.VideoSubtitlePreferenceMode;
+                VideoPreferredSubtitleLanguage = saved.VideoPreferredSubtitleLanguage ?? string.Empty;
 
                 NewsScanEnabled = saved.NewsScanEnabled;
                 LastNewsScanUtc = saved.LastNewsScanUtc;
@@ -5711,6 +7617,11 @@ namespace AnikiHelper
                 ThisMonthTopGameId = saved.ThisMonthTopGameId;
                 ThisYearTopGameId = saved.ThisYearTopGameId;
                 RecentPlayedBackgroundPath = saved.RecentPlayedBackgroundPath ?? string.Empty;
+                HubMostPlayedName = saved.HubMostPlayedName ?? string.Empty;
+                HubMostPlayedPlaytime = saved.HubMostPlayedPlaytime ?? string.Empty;
+                HubMostPlayedBackgroundPath = saved.HubMostPlayedBackgroundPath ?? string.Empty;
+                HubMostPlayedGameId = saved.HubMostPlayedGameId;
+                HubMostPlayedIsMonthly = saved.HubMostPlayedIsMonthly;
                 HubRecentAddedName = saved.HubRecentAddedName ?? string.Empty;
                 HubRecentAddedDate = saved.HubRecentAddedDate ?? string.Empty;
                 HubRecentAddedBackgroundPath = saved.HubRecentAddedBackgroundPath ?? string.Empty;
@@ -5723,6 +7634,55 @@ namespace AnikiHelper
                 HubNeverPlayedGameId = saved.HubNeverPlayedGameId;
                 IsWelcomeHubOpen = saved.IsWelcomeHubOpen;
             }
+
+            // Migrate the old single-path Video Center settings and wire change notifications.
+            InitializeVideoLibraryPathCollections(saved);
+
+            // Migration for builds that had the fourth library before the explicit enable switch.
+            // A legacy configuration with a real custom path remains enabled. New configurations
+            // that are explicitly disabled persist no custom path, so they stay disabled.
+            if (!videoCustomLibraryEnabled && VideoCustomLibraryPaths != null &&
+                VideoCustomLibraryPaths.Any(x => x != null && !string.IsNullOrWhiteSpace(x.Path)))
+            {
+                videoCustomLibraryEnabled = true;
+                OnPropertyChanged(nameof(VideoCustomLibraryEnabled));
+            }
+
+            if (saved == null)
+            {
+                HubShortcutsDefaultsVersion = CurrentHubShortcutsDefaultsVersion;
+            }
+            else if (HubShortcutsDefaultsVersion < CurrentHubShortcutsDefaultsVersion)
+            {
+                var previousConfigurationWasUntouched =
+                    !saved.HubAppsEnabled &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot1ToolName) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot2ToolName) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot3ToolName) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot4ToolName) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot1BackgroundPath) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot2BackgroundPath) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot3BackgroundPath) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot4BackgroundPath);
+
+                if (previousConfigurationWasUntouched)
+                {
+                    HubAppsEnabled = true;
+                    HubAppSlot1ToolName = HubFeatureWebBrowserId;
+                    HubAppSlot2ToolName = HubFeatureMediaGalleryId;
+                    HubAppSlot3ToolName = HubFeatureSteamFriendsId;
+                    HubAppSlot4ToolName = HubFeatureSteamStoreId;
+                    hubShortcutsDefaultsMigrationApplied = true;
+                }
+
+                HubShortcutsDefaultsVersion = CurrentHubShortcutsDefaultsVersion;
+                hubShortcutsDefaultsMigrationApplied = true;
+            }
+
+            // Built-in choices are immediately available even before Playnite Software Tools
+            // finish loading. LoadOverlayApps() later appends external applications.
+            RebuildHubShortcutChoices(new List<AnikiOverlayAppItem>());
+            RefreshHubApps();
 
             EnsureSteamFriendsRuntimeCollections();
 
@@ -5744,7 +7704,7 @@ namespace AnikiHelper
             RefreshGameLaunchSplashCustomPriorityOptions();
             RefreshInGameOverlayNeverSuspendGameItems();
 
-            if (saved == null)
+            if (saved == null && loadPersistedSettings)
             {
                 try
                 {
@@ -5756,7 +7716,12 @@ namespace AnikiHelper
                     logger?.Warn(ex, "[AnikiHelper] Failed to create a new clean config.json.");
                 }
             }
-            else if (saved.SteamApiKeyStorageNeedsSave || saved.SteamWebApiTokenStorageNeedsSave)
+            else if (loadPersistedSettings && saved != null &&
+                     (hubShortcutsDefaultsMigrationApplied ||
+                      debugLogsStateNeedsSave ||
+                      saved.SteamApiKeyStorageNeedsSave ||
+                      saved.SteamWebApiTokenStorageNeedsSave ||
+                      saved.VideoTmdbTokenStorageNeedsSave))
             {
                 try
                 {
@@ -5764,7 +7729,7 @@ namespace AnikiHelper
                 }
                 catch (Exception ex)
                 {
-                    logger?.Warn(ex, "[AnikiHelper] Failed to save migrated Steam credentials.");
+                    logger?.Warn(ex, "[AnikiHelper] Failed to save migrated settings.");
                 }
             }
             RefreshMediaGalleryCommand = new RelayCommand(
@@ -5815,6 +7780,17 @@ namespace AnikiHelper
                 }
 
             );
+
+            // Opening a Capture Gallery item is intentionally one-way. The focused
+            // ToggleButton may still receive A while the fullscreen viewer is open,
+            // but A must never toggle the viewer closed; B owns that action instead.
+            OpenMediaGalleryFullscreenViewerCommand = new RelayCommand<object>(source =>
+            {
+                if (source is System.Windows.Controls.ListBox listBox)
+                {
+                    listBox.Tag = true;
+                }
+            });
 
             OpenOverlayAppCommand = new RelayCommand<AnikiOverlayAppItem>(
                 appItem => OpenOverlayApp(appItem)
@@ -5902,8 +7878,94 @@ namespace AnikiHelper
                 styleKey => new RelayCommand(() => plugin?.OpenWindow(styleKey))
             );
 
+            OpenQuickAccessFeaturesCommand = new RelayCommand(OpenQuickAccessFeatures);
+            CloseQuickAccessFeaturesCommand = new RelayCommand(CloseQuickAccessFeatures);
+            OpenQuickAccessFeatureCommand = new RelayCommand<object>(featureId =>
+            {
+                OpenQuickAccessFeature(featureId?.ToString());
+            });
+
+            OpenQuickAccessSoftwareToolsCommand = new RelayCommand(() =>
+            {
+                LoadOverlayApps();
+                plugin?.OpenChildWindow("AppsWindowStyle|FocusFirst|NoDim");
+                IsQuickAccessFeaturesOpen = false;
+            });
+
+            OpenQuickAccessAudioSwitcherCommand = new RelayCommand(() =>
+            {
+                plugin?.OpenChildWindow("AudioSwitcherWindowStyle|FocusFirst|RefocusAfterClick");
+                IsQuickAccessFeaturesOpen = false;
+            });
+
+            OpenQuickAccessUniPlaySongCommand = new RelayCommand(() =>
+            {
+                plugin?.OpenChildWindow("UniPlaySongWindowStyle|FocusFirst|NoDim");
+                IsQuickAccessFeaturesOpen = false;
+            });
+
             OpenChildWindow = new AnikiWindowCommandProvider(
                 styleKey => new RelayCommand(() => plugin?.OpenChildWindow(styleKey))
+            );
+
+            OpenAchievementActionsCommand = new RelayCommand<object>(
+                achievement =>
+                {
+                    if (achievement == null)
+                    {
+                        return;
+                    }
+
+                    SelectedAchievementActionItem = achievement;
+
+                    // Snapshot the two writeable states for the modal. PA rebuilds its
+                    // dynamic list after a write, so the original AchievementDetail can
+                    // become stale while the modal is still open.
+                    selectedAchievementGoalState = GetSelectedAchievementBool("IsGoal");
+                    selectedAchievementCapstoneState = GetSelectedAchievementBool("IsCapstone");
+
+                    selectedAchievementFocusApiName = GetSelectedAchievementString("ApiName");
+                    selectedAchievementFocusName = GetSelectedAchievementString("Name");
+
+                    OnPropertyChanged(nameof(SelectedAchievementIsGoal));
+                    OnPropertyChanged(nameof(SelectedAchievementIsCapstone));
+
+                    SelectedAchievementCapturePath = string.Empty;
+                    SelectedAchievementCaptureIsVideo = false;
+
+                    // RefocusAfterClick keeps controller focus on the clicked physical
+                    // action button even if PA rebuilds its list in the background.
+                    plugin?.OpenChildWindow("AchievementActionsWindowStyle|FocusFirst|RefocusAfterClick|NoDim");
+                }
+            );
+
+            ToggleSelectedAchievementGoalCommand = new RelayCommand(
+                () => ExecuteSelectedAchievementItemCommand("ToggleAchievementGoalCommand", closeActionMenuAfterExecute: false)
+            );
+
+            ToggleSelectedAchievementCapstoneCommand = new RelayCommand(
+                () => ExecuteSelectedAchievementItemCommand("ToggleAchievementCapstoneCommand", closeActionMenuAfterExecute: false)
+            );
+
+            OpenSelectedAchievementCaptureCommand = new RelayCommand<object>(
+                captureKind =>
+                {
+                    var kind = captureKind?.ToString();
+                    var path = GetSelectedAchievementCapturePath(kind);
+
+                    if (!IsUsableAchievementCapturePath(path))
+                    {
+                        return;
+                    }
+
+                    SelectedAchievementCapturePath = path;
+                    SelectedAchievementCaptureIsVideo =
+                        string.Equals(kind, "Video", StringComparison.OrdinalIgnoreCase);
+
+                    // Keep the action menu underneath. B closes only the viewer and
+                    // returns to the achievement menu, console-style.
+                    plugin?.OpenChildWindow("AchievementCaptureViewerWindowStyle|NoDim");
+                }
             );
 
             OpenWebBrowserCommand = new RelayCommand(
@@ -5966,6 +8028,16 @@ namespace AnikiHelper
                     if (PrepareDuplicateHiderVersionsWindow())
                     {
                         plugin?.OpenChildWindow("DuplicateHiderVersionsWindowStyle|FocusFirst");
+                    }
+                }
+            );
+
+            OpenGameLinksWindowCommand = new RelayCommand(
+                () =>
+                {
+                    if (PrepareSelectedGameLinksWindow())
+                    {
+                        plugin?.OpenWindow("GameLinksWindowStyle|FocusFirst|SecondaryMusic");
                     }
                 }
             );
@@ -6131,16 +8203,12 @@ namespace AnikiHelper
 
                         if (!string.IsNullOrWhiteSpace(url))
                         {
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = url,
-                                UseShellExecute = true
-                            });
+                            plugin?.OpenWebBrowser(url, SteamStoreDetailsTitle);
                         }
                     }
                     catch (Exception ex)
                     {
-                        logger.Warn(ex, "[AnikiHelper] Failed to open Steam Store page.");
+                        logger.Warn(ex, "[AnikiHelper] Failed to open Steam Store page in Aniki Web Browser.");
                     }
                 }
             );
@@ -6204,7 +8272,7 @@ namespace AnikiHelper
                             LoadDiskUsages();
                         });
 
-                        logger?.Debug($"[AnikiHelper][Startup] Deferred cache warmup queued in {sw.ElapsedMilliseconds}ms.");
+                        global::AnikiHelper.AnikiLog.Debug(logger, $"[AnikiHelper][Startup] Deferred cache warmup queued in {sw.ElapsedMilliseconds}ms.");
                     }
                     catch (Exception ex)
                     {
@@ -6279,6 +8347,7 @@ namespace AnikiHelper
                 OnPropertyChanged(nameof(HasHubLatestMedia));
                 OnPropertyChanged(nameof(HubMemoryItems));
                 OnPropertyChanged(nameof(HasHubMemory));
+                NotifyHubPageDotProperties();
                 OnPropertyChanged(nameof(HubMemorySubtitle));
             }
             catch (Exception ex)
@@ -6461,9 +8530,9 @@ namespace AnikiHelper
         {
             var rawItems = (items ?? Enumerable.Empty<AnikiMediaItem>()).ToList();
 
-            logger?.Info($"[AnikiHelper] Unified raw media count: {rawItems.Count}");
-            logger?.Info($"[AnikiHelper] Visualizer count: {rawItems.Count(x => x.SourceProvider == "Screenshots Visualizer")}");
-            logger?.Info($"[AnikiHelper] Utilities count: {rawItems.Count(x => x.SourceProvider == "Screenshot Utilities - Local")}");
+            global::AnikiHelper.AnikiLog.Debug(logger, $"[AnikiHelper] Unified raw media count: {rawItems.Count}");
+            global::AnikiHelper.AnikiLog.Debug(logger, $"[AnikiHelper] Visualizer count: {rawItems.Count(x => x.SourceProvider == "Screenshots Visualizer")}");
+            global::AnikiHelper.AnikiLog.Debug(logger, $"[AnikiHelper] Utilities count: {rawItems.Count(x => x.SourceProvider == "Screenshot Utilities - Local")}");
 
             var duplicateCount = rawItems
                 .Where(x => x != null)
@@ -6471,7 +8540,7 @@ namespace AnikiHelper
                 .GroupBy(x => NormalizeMediaItemPath(x.FilePath), StringComparer.OrdinalIgnoreCase)
                 .Count(g => g.Count() > 1);
 
-            logger?.Info($"[AnikiHelper] Unified duplicate file groups removed: {duplicateCount}");
+            global::AnikiHelper.AnikiLog.Debug(logger, $"[AnikiHelper] Unified duplicate file groups removed: {duplicateCount}");
 
             var list = rawItems.Where(x => x != null)
                 .Where(x => !string.IsNullOrWhiteSpace(x.FilePath))
@@ -6731,7 +8800,7 @@ namespace AnikiHelper
                             catch (Exception ex)
                             {
                                 failedCount++;
-                                logger?.Debug(ex, "[AnikiHelper] Failed to generate media thumbnail.");
+                                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper] Failed to generate media thumbnail.");
                             }
 
                             if (done % 5 == 0 || done == scannedCount)
@@ -6900,7 +8969,7 @@ namespace AnikiHelper
                             }
                             catch (Exception ex)
                             {
-                                logger?.Debug(ex, "[AnikiHelper] Failed to generate media thumbnail for selected game.");
+                                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper] Failed to generate media thumbnail for selected game.");
                             }
                         }
 
@@ -7003,7 +9072,7 @@ namespace AnikiHelper
 
                     if (visualizerWasStillRefreshing)
                     {
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             "[AnikiHelper] Screenshots Visualizer data is still stale after game stop. Waiting for its refresh."
                         );
 
@@ -7027,7 +9096,7 @@ namespace AnikiHelper
 
                         if (visualizerRefreshCompleted)
                         {
-                            logger?.Debug(
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
                                 "[AnikiHelper] Screenshots Visualizer refresh completed. Updating Aniki media cache again."
                             );
 
@@ -7039,7 +9108,7 @@ namespace AnikiHelper
                         }
                         else
                         {
-                            logger?.Debug(
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
                                 "[AnikiHelper] Timed out while waiting for Screenshots Visualizer refresh."
                             );
                         }
@@ -7095,7 +9164,7 @@ namespace AnikiHelper
                 }
                 catch (Exception ex)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         ex,
                         "[AnikiHelper] Failed to generate thumbnail during silent stopped-game refresh."
                     );
@@ -7237,6 +9306,201 @@ namespace AnikiHelper
             NotifyHubPageStateProperties();
         }
 
+        private bool IsBuiltInHubFeatureId(string selectionId)
+        {
+            return string.Equals(selectionId, HubFeatureWebBrowserId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(selectionId, HubFeatureMediaGalleryId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(selectionId, HubFeatureSteamFriendsId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(selectionId, HubFeatureSteamStoreId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(selectionId, HubFeatureMusicPlayerId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(selectionId, HubFeatureVideoPlayerId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string ResolveActiveThemeFeatureAssetPath(string fileName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(fileName) || plugin?.PlayniteApi?.Paths == null)
+                {
+                    return string.Empty;
+                }
+
+                var themeId = plugin.PlayniteApi.ApplicationSettings?.FullscreenTheme;
+                if (string.IsNullOrWhiteSpace(themeId))
+                {
+                    return string.Empty;
+                }
+
+                var roots = new[]
+                {
+                    plugin.PlayniteApi.Paths.ConfigurationPath,
+                    plugin.PlayniteApi.Paths.ApplicationPath
+                };
+
+                foreach (var root in roots
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    var candidate = Path.Combine(
+                        root,
+                        "Themes",
+                        "Fullscreen",
+                        themeId,
+                        "Images",
+                        "Hub",
+                        "Features",
+                        fileName);
+
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper] Failed to resolve a built-in Hub feature asset.");
+            }
+
+            return string.Empty;
+        }
+
+        private AnikiOverlayAppItem CreateBuiltInHubFeatureItem(string selectionId)
+        {
+            if (string.Equals(selectionId, HubFeatureWebBrowserId, StringComparison.OrdinalIgnoreCase))
+            {
+                return new AnikiOverlayAppItem
+                {
+                    Name = Loc("HubFeature_WebBrowser", "Aniki Web Browser"),
+                    ActionId = HubFeatureWebBrowserId,
+                    IconPath = ResolveActiveThemeFeatureAssetPath("WebBrowser_Icon.png"),
+                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("WebBrowser_Background.png")
+                };
+            }
+
+            if (string.Equals(selectionId, HubFeatureMediaGalleryId, StringComparison.OrdinalIgnoreCase))
+            {
+                return new AnikiOverlayAppItem
+                {
+                    Name = Loc("HubFeature_MediaGallery", "Capture Gallery"),
+                    ActionId = HubFeatureMediaGalleryId,
+                    IconPath = ResolveActiveThemeFeatureAssetPath("MediaGallery_Icon.png"),
+                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("MediaGallery_Background.png")
+                };
+            }
+
+            if (string.Equals(selectionId, HubFeatureSteamFriendsId, StringComparison.OrdinalIgnoreCase))
+            {
+                return new AnikiOverlayAppItem
+                {
+                    Name = Loc("HubFeature_SteamFriends", "Steam Friends"),
+                    ActionId = HubFeatureSteamFriendsId,
+                    IconPath = ResolveActiveThemeFeatureAssetPath("SteamFriends_Icon.png"),
+                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("SteamFriends_Background.png")
+                };
+            }
+
+            if (string.Equals(selectionId, HubFeatureSteamStoreId, StringComparison.OrdinalIgnoreCase))
+            {
+                return new AnikiOverlayAppItem
+                {
+                    Name = Loc("HubFeature_SteamStore", "Steam Store"),
+                    ActionId = HubFeatureSteamStoreId,
+                    IconPath = ResolveActiveThemeFeatureAssetPath("SteamStore_Icon.png"),
+                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("SteamStore_Background.png")
+                };
+            }
+
+            if (string.Equals(selectionId, HubFeatureMusicPlayerId, StringComparison.OrdinalIgnoreCase))
+            {
+                return new AnikiOverlayAppItem
+                {
+                    Name = Loc("HubFeature_MusicPlayer", "Music Player"),
+                    ActionId = HubFeatureMusicPlayerId,
+                    IconPath = ResolveActiveThemeFeatureAssetPath("MusicPlayer_Icon.png"),
+                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("MusicPlayer_Background.png")
+                };
+            }
+
+            if (string.Equals(selectionId, HubFeatureVideoPlayerId, StringComparison.OrdinalIgnoreCase))
+            {
+                return new AnikiOverlayAppItem
+                {
+                    Name = Loc("HubFeature_VideoPlayer", "Aniki Video Center"),
+                    ActionId = HubFeatureVideoPlayerId,
+                    IconPath = ResolveActiveThemeFeatureAssetPath("VideoPlayer_Icon.png"),
+                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("VideoPlayer_Background.png")
+                };
+            }
+
+            return null;
+        }
+
+        private void RebuildHubShortcutChoices(IList<AnikiOverlayAppItem> softwareItems)
+        {
+            HubShortcutChoices.Clear();
+
+            HubShortcutChoices.Add(new AnikiHubShortcutChoice
+            {
+                Id = string.Empty,
+                DisplayName = Loc("HubApps_None", "None")
+            });
+
+            HubShortcutChoices.Add(new AnikiHubShortcutChoice
+            {
+                Id = "header:aniki-features",
+                DisplayName = Loc("HubApps_GroupAnikiFeatures", "ANIKI FEATURES"),
+                IsHeader = true
+            });
+
+            var builtInFeatures = new[]
+            {
+                CreateBuiltInHubFeatureItem(HubFeatureWebBrowserId),
+                CreateBuiltInHubFeatureItem(HubFeatureMediaGalleryId),
+                CreateBuiltInHubFeatureItem(HubFeatureSteamFriendsId),
+                CreateBuiltInHubFeatureItem(HubFeatureSteamStoreId),
+                CreateBuiltInHubFeatureItem(HubFeatureMusicPlayerId),
+                CreateBuiltInHubFeatureItem(HubFeatureVideoPlayerId)
+            };
+
+            foreach (var feature in builtInFeatures.Where(x => x != null))
+            {
+                HubShortcutChoices.Add(new AnikiHubShortcutChoice
+                {
+                    Id = feature.ActionId,
+                    DisplayName = feature.Name
+                });
+            }
+
+            var normalizedSoftwareItems = (softwareItems ?? new List<AnikiOverlayAppItem>())
+                .Where(x => x != null && !string.IsNullOrWhiteSpace(x.Name))
+                .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(x => x.First())
+                .OrderBy(x => x.Name)
+                .ToList();
+
+            if (normalizedSoftwareItems.Count > 0)
+            {
+                HubShortcutChoices.Add(new AnikiHubShortcutChoice
+                {
+                    Id = "header:software-tools",
+                    DisplayName = Loc("HubApps_GroupSoftwareTools", "SOFTWARE TOOLS"),
+                    IsHeader = true
+                });
+
+                foreach (var app in normalizedSoftwareItems)
+                {
+                    HubShortcutChoices.Add(new AnikiHubShortcutChoice
+                    {
+                        Id = app.Name,
+                        DisplayName = app.Name
+                    });
+                }
+            }
+
+            OnPropertyChanged(nameof(HubShortcutChoices));
+        }
+
         private void RefreshHubApps()
         {
             var existingItems = HubAppItems?.ToList() ?? new List<AnikiOverlayAppItem>();
@@ -7247,48 +9511,57 @@ namespace AnikiHelper
 
                 var slots = new[]
                 {
-                    new { ToolName = HubAppSlot1ToolName, BackgroundPath = HubAppSlot1BackgroundPath },
-                    new { ToolName = HubAppSlot2ToolName, BackgroundPath = HubAppSlot2BackgroundPath },
-                    new { ToolName = HubAppSlot3ToolName, BackgroundPath = HubAppSlot3BackgroundPath },
-                    new { ToolName = HubAppSlot4ToolName, BackgroundPath = HubAppSlot4BackgroundPath }
+                    new { SelectionId = HubAppSlot1ToolName, BackgroundPath = HubAppSlot1BackgroundPath },
+                    new { SelectionId = HubAppSlot2ToolName, BackgroundPath = HubAppSlot2BackgroundPath },
+                    new { SelectionId = HubAppSlot3ToolName, BackgroundPath = HubAppSlot3BackgroundPath },
+                    new { SelectionId = HubAppSlot4ToolName, BackgroundPath = HubAppSlot4BackgroundPath }
                 };
 
-                var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var slot in slots)
                 {
-                    if (string.IsNullOrWhiteSpace(slot.ToolName))
+                    if (string.IsNullOrWhiteSpace(slot.SelectionId) || usedIds.Contains(slot.SelectionId))
                     {
                         continue;
                     }
 
-                    if (usedNames.Contains(slot.ToolName))
+                    AnikiOverlayAppItem source = null;
+
+                    if (IsBuiltInHubFeatureId(slot.SelectionId))
                     {
-                        continue;
+                        source = CreateBuiltInHubFeatureItem(slot.SelectionId);
                     }
-
-                    var source = OverlayAppItems?
-                        .FirstOrDefault(x => string.Equals(x.Name, slot.ToolName, StringComparison.OrdinalIgnoreCase));
-
-                    if (source == null)
+                    else
                     {
-                        source = existingItems
-                            .FirstOrDefault(x => string.Equals(x.Name, slot.ToolName, StringComparison.OrdinalIgnoreCase));
-                    }
+                        source = OverlayAppItems?
+                            .FirstOrDefault(x => string.Equals(x.Name, slot.SelectionId, StringComparison.OrdinalIgnoreCase));
 
-                    if (source == null)
-                    {
-                        // Keep the page visible when the saved slot exists, but Playnite Software Tools
-                        // are not available yet. A later LoadOverlayApps() call will replace it with
-                        // the real Software Tool item.
-                        source = new AnikiOverlayAppItem
+                        if (source == null)
                         {
-                            Name = slot.ToolName ?? string.Empty,
-                            BackgroundImagePath = ResolveExternalImagePath(slot.BackgroundPath)
-                        };
+                            source = existingItems.FirstOrDefault(x =>
+                                string.IsNullOrWhiteSpace(x.ActionId) &&
+                                string.Equals(x.Name, slot.SelectionId, StringComparison.OrdinalIgnoreCase));
+                        }
+
+                        if (source == null)
+                        {
+                            // Keep a saved external Software Tool visible while Playnite is still
+                            // loading its SoftwareApps collection. A later LoadOverlayApps() call
+                            // replaces this placeholder with the real item.
+                            source = new AnikiOverlayAppItem
+                            {
+                                Name = slot.SelectionId
+                            };
+                        }
                     }
 
-                    usedNames.Add(slot.ToolName);
+                    if (source == null)
+                    {
+                        continue;
+                    }
+
+                    usedIds.Add(slot.SelectionId);
 
                     newItems.Add(new AnikiOverlayAppItem
                     {
@@ -7301,6 +9574,7 @@ namespace AnikiHelper
                         Arguments = source.Arguments ?? string.Empty,
                         WorkingDir = source.WorkingDir ?? string.Empty,
                         IsScript = source.IsScript,
+                        ActionId = source.ActionId ?? string.Empty,
                         SourceApp = source.SourceApp
                     });
                 }
@@ -7312,12 +9586,12 @@ namespace AnikiHelper
                 }
 
                 HubAppsEmptyText = HasSelectedHubAppSlot
-                    ? "Loading selected Software Tools..."
-                    : "Select apps in Aniki Helper settings first.";
+                    ? Loc("HubApps_Loading", "Loading selected shortcuts...")
+                    : Loc("HubApps_Empty", "Choose features or apps in Aniki Helper settings.");
             }
             catch (Exception ex)
             {
-                logger?.Warn(ex, "[AnikiHelper] Failed to refresh Hub apps. Keeping previous Hub Apps state.");
+                logger?.Warn(ex, "[AnikiHelper] Failed to refresh Hub shortcuts. Keeping previous state.");
 
                 if (HubAppItems == null || HubAppItems.Count == 0)
                 {
@@ -7356,19 +9630,25 @@ namespace AnikiHelper
                 // available without referencing Playnite internals directly.
                 var apps = GetSoftwareAppsForOverlay();
 
-                if ((apps == null || apps.Count == 0) &&
-                    (OverlayAppItems?.Count > 0 || HubAppItems?.Count > 0) &&
-                    HasSelectedHubAppSlot)
+                if ((apps == null || apps.Count == 0) && OverlayAppItems?.Count > 0)
                 {
                     logger?.Warn(
                         "[AnikiHelper] Software Tools refresh returned 0 apps. " +
-                        "Keeping the previous Hub Apps list to avoid hiding the Hub page during fullscreen startup.");
+                        "Keeping the previous Software Tools list while built-in features remain available.");
+
+                    RebuildHubShortcutChoices(OverlayAppItems.ToList());
+
+                    HubAppSlot1ToolName = savedHubAppSlot1ToolName;
+                    HubAppSlot2ToolName = savedHubAppSlot2ToolName;
+                    HubAppSlot3ToolName = savedHubAppSlot3ToolName;
+                    HubAppSlot4ToolName = savedHubAppSlot4ToolName;
 
                     RefreshHubApps();
 
                     OnPropertyChanged(nameof(OverlayAppItems));
                     OnPropertyChanged(nameof(HasOverlayApps));
                     OnPropertyChanged(nameof(SoftwareToolNamesForSelection));
+                    OnPropertyChanged(nameof(HubShortcutChoices));
                     OnPropertyChanged(nameof(OverlayAppsEmptyText));
                     return;
                 }
@@ -7407,6 +9687,8 @@ namespace AnikiHelper
                     SoftwareToolNamesForSelection.Add(name);
                 }
 
+                RebuildHubShortcutChoices(items);
+
                 // Restore the values that the Settings ComboBoxes may have temporarily
                 // reset when SoftwareToolNamesForSelection was cleared.
                 HubAppSlot1ToolName = savedHubAppSlot1ToolName;
@@ -7420,6 +9702,7 @@ namespace AnikiHelper
                 OnPropertyChanged(nameof(OverlayAppItems));
                 OnPropertyChanged(nameof(HasOverlayApps));
                 OnPropertyChanged(nameof(SoftwareToolNamesForSelection));
+                OnPropertyChanged(nameof(HubShortcutChoices));
                 OnPropertyChanged(nameof(OverlayAppsEmptyText));
             }
             catch (Exception ex)
@@ -7443,6 +9726,7 @@ namespace AnikiHelper
                 OverlayAppItems.Clear();
                 SoftwareToolNamesForSelection.Clear();
                 SoftwareToolNamesForSelection.Add(string.Empty);
+                RebuildHubShortcutChoices(new List<AnikiOverlayAppItem>());
 
                 // Keep the configured slots even if loading Playnite's Software Tools fails.
                 HubAppSlot1ToolName = savedHubAppSlot1ToolName;
@@ -7456,6 +9740,7 @@ namespace AnikiHelper
                 OnPropertyChanged(nameof(OverlayAppItems));
                 OnPropertyChanged(nameof(HasOverlayApps));
                 OnPropertyChanged(nameof(SoftwareToolNamesForSelection));
+                OnPropertyChanged(nameof(HubShortcutChoices));
                 OnPropertyChanged(nameof(OverlayAppsEmptyText));
             }
         }
@@ -7568,7 +9853,18 @@ namespace AnikiHelper
         {
             try
             {
-                var app = item?.SourceApp;
+                if (item == null)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(item.ActionId))
+                {
+                    OpenBuiltInHubFeature(item.ActionId);
+                    return;
+                }
+
+                var app = item.SourceApp;
                 if (app == null)
                 {
                     StartOverlayAppFromPathFallback(item);
@@ -7587,6 +9883,508 @@ namespace AnikiHelper
             catch (Exception ex)
             {
                 logger?.Warn(ex, "[AnikiHelper] Failed to open overlay app.");
+            }
+        }
+
+        private object GetSelectedAchievementPropertyValue(string propertyName)
+        {
+            if (SelectedAchievementActionItem == null || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return null;
+            }
+
+            try
+            {
+                var property = SelectedAchievementActionItem
+                    .GetType()
+                    .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+
+                return property?.GetValue(SelectedAchievementActionItem);
+            }
+            catch (Exception ex)
+            {
+                global::AnikiHelper.AnikiLog.Debug(logger, 
+                    ex,
+                    $"[AnikiHelper][Achievements] Failed to read achievement property '{propertyName}'.");
+                return null;
+            }
+        }
+
+        private string GetSelectedAchievementString(string propertyName)
+        {
+            return GetSelectedAchievementPropertyValue(propertyName)?.ToString() ?? string.Empty;
+        }
+
+        private bool GetSelectedAchievementBool(string propertyName)
+        {
+            var value = GetSelectedAchievementPropertyValue(propertyName);
+
+            if (value is bool boolValue)
+            {
+                return boolValue;
+            }
+
+            return value != null &&
+                   bool.TryParse(value.ToString(), out var parsed) &&
+                   parsed;
+        }
+
+        private static bool IsUsableAchievementCapturePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                return File.Exists(path);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private string GetSelectedAchievementCapturePath(string captureKind)
+        {
+            if (string.Equals(captureKind, "Clean", StringComparison.OrdinalIgnoreCase))
+            {
+                return SelectedAchievementCleanCapturePath;
+            }
+
+            if (string.Equals(captureKind, "Notification", StringComparison.OrdinalIgnoreCase))
+            {
+                return SelectedAchievementNotificationCapturePath;
+            }
+
+            if (string.Equals(captureKind, "Framed", StringComparison.OrdinalIgnoreCase))
+            {
+                return SelectedAchievementFramedCapturePath;
+            }
+
+            if (string.Equals(captureKind, "Video", StringComparison.OrdinalIgnoreCase))
+            {
+                return SelectedAchievementVideoCapturePath;
+            }
+
+            return string.Empty;
+        }
+
+        private void ExecuteSelectedAchievementItemCommand(
+            string commandPropertyName,
+            bool closeActionMenuAfterExecute)
+        {
+            try
+            {
+                var command = GetSelectedAchievementPropertyValue(commandPropertyName) as ICommand;
+
+                if (command == null || !command.CanExecute(null))
+                {
+                    return;
+                }
+
+                command.Execute(null);
+
+                if (string.Equals(
+                        commandPropertyName,
+                        "ToggleAchievementGoalCommand",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedAchievementGoalState = !SelectedAchievementIsGoal;
+                    OnPropertyChanged(nameof(SelectedAchievementIsGoal));
+                }
+                else if (string.Equals(
+                             commandPropertyName,
+                             "ToggleAchievementCapstoneCommand",
+                             StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedAchievementCapstoneState = !SelectedAchievementIsCapstone;
+                    OnPropertyChanged(nameof(SelectedAchievementIsCapstone));
+                }
+
+                // Keep the modal open. PA is free to rebuild/reorder DynamicAchievements
+                // behind it, while the controller focus stays inside this modal.
+                if (closeActionMenuAfterExecute)
+                {
+                    plugin?.CloseTopWindow();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(
+                    ex,
+                    $"[AnikiHelper][Achievements] Failed to execute '{commandPropertyName}'.");
+            }
+        }
+
+        public void RestoreSelectedAchievementListFocusAfterActionMenuClose()
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null)
+            {
+                return;
+            }
+
+            dispatcher.BeginInvoke(
+                new Action(() =>
+                {
+                    if (TryRestoreSelectedAchievementListFocus())
+                    {
+                        return;
+                    }
+
+                    // PA coalesces list rebuilds. One delayed fallback handles the case
+                    // where the new DynamicAchievements collection is not ready yet.
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(140).ConfigureAwait(false);
+
+                        try
+                        {
+                            await dispatcher.InvokeAsync(
+                                new Action(() => TryRestoreSelectedAchievementListFocus()),
+                                DispatcherPriority.ContextIdle);
+                        }
+                        catch
+                        {
+                        }
+                    });
+                }),
+                DispatcherPriority.ContextIdle);
+        }
+
+        private bool TryRestoreSelectedAchievementListFocus()
+        {
+            try
+            {
+                var achievementList = FindVisibleNamedElement<ListView>("DynamicAchievementList");
+                if (achievementList == null)
+                {
+                    return false;
+                }
+
+                object targetItem = null;
+
+                foreach (var item in achievementList.Items)
+                {
+                    if (item == null)
+                    {
+                        continue;
+                    }
+
+                    var apiName = GetObjectStringProperty(item, "ApiName");
+
+                    if (!string.IsNullOrWhiteSpace(selectedAchievementFocusApiName) &&
+                        string.Equals(apiName, selectedAchievementFocusApiName, StringComparison.Ordinal))
+                    {
+                        targetItem = item;
+                        break;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(selectedAchievementFocusApiName) &&
+                        !string.IsNullOrWhiteSpace(selectedAchievementFocusName) &&
+                        string.Equals(
+                            GetObjectStringProperty(item, "Name"),
+                            selectedAchievementFocusName,
+                            StringComparison.CurrentCulture))
+                    {
+                        targetItem = item;
+                        break;
+                    }
+                }
+
+                if (targetItem == null)
+                {
+                    return false;
+                }
+
+                achievementList.SelectedItem = targetItem;
+                achievementList.ScrollIntoView(targetItem);
+
+                achievementList.Dispatcher.BeginInvoke(
+                    new Action(() =>
+                    {
+                        try
+                        {
+                            var container =
+                                achievementList.ItemContainerGenerator.ContainerFromItem(targetItem)
+                                as ListViewItem;
+
+                            if (container == null)
+                            {
+                                return;
+                            }
+
+                            var button = FindFocusableButton(container);
+                            if (button != null)
+                            {
+                                button.Focus();
+                                Keyboard.Focus(button);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
+                                ex,
+                                "[AnikiHelper][Achievements] Failed to focus rebuilt achievement row.");
+                        }
+                    }),
+                    DispatcherPriority.Loaded);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                global::AnikiHelper.AnikiLog.Debug(logger, 
+                    ex,
+                    "[AnikiHelper][Achievements] Achievement focus restoration failed.");
+                return false;
+            }
+        }
+
+        private static string GetObjectStringProperty(object source, string propertyName)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return source
+                           .GetType()
+                           .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
+                           ?.GetValue(source)
+                           ?.ToString()
+                       ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static T FindVisibleNamedElement<T>(string elementName)
+            where T : FrameworkElement
+        {
+            if (Application.Current == null || string.IsNullOrWhiteSpace(elementName))
+            {
+                return null;
+            }
+
+            try
+            {
+                var windows = Application.Current.Windows
+                    .OfType<Window>()
+                    .Where(window => window != null && window.IsVisible)
+                    .OrderByDescending(window => window.IsActive)
+                    .ToList();
+
+                foreach (var window in windows)
+                {
+                    var result = FindNamedVisualDescendant<T>(window, elementName);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static T FindNamedVisualDescendant<T>(DependencyObject root, string elementName)
+            where T : FrameworkElement
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            if (root is T typed &&
+                string.Equals(typed.Name, elementName, StringComparison.Ordinal))
+            {
+                return typed;
+            }
+
+            int count;
+
+            try
+            {
+                count = VisualTreeHelper.GetChildrenCount(root);
+            }
+            catch
+            {
+                return null;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child;
+
+                try
+                {
+                    child = VisualTreeHelper.GetChild(root, i);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                var result = FindNamedVisualDescendant<T>(child, elementName);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return null;
+        }
+
+        private static ButtonBase FindFocusableButton(DependencyObject root)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            if (root is ButtonBase button &&
+                button.Focusable &&
+                button.IsEnabled &&
+                button.IsVisible)
+            {
+                return button;
+            }
+
+            int count;
+
+            try
+            {
+                count = VisualTreeHelper.GetChildrenCount(root);
+            }
+            catch
+            {
+                return null;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child;
+
+                try
+                {
+                    child = VisualTreeHelper.GetChild(root, i);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                var result = FindFocusableButton(child);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return null;
+        }
+
+        public void OpenQuickAccessFeatures()
+        {
+            IsQuickAccessFeaturesOpen = true;
+            plugin?.FocusQuickAccessElement("FeatureWebBrowserButton");
+        }
+
+        public void CloseQuickAccessFeatures()
+        {
+            if (!IsQuickAccessFeaturesOpen)
+            {
+                return;
+            }
+
+            IsQuickAccessFeaturesOpen = false;
+            plugin?.FocusQuickAccessElement("QuickFeaturesButton");
+        }
+
+        private void OpenQuickAccessFeature(string actionId)
+        {
+            if (string.IsNullOrWhiteSpace(actionId))
+            {
+                return;
+            }
+
+            // Keep the submenu visible if Music Player cannot be opened, so the
+            // user returns to the same focused item after dismissing the message.
+            if (string.Equals(actionId, HubFeatureMusicPlayerId, StringComparison.OrdinalIgnoreCase) &&
+                Application.Current?.Properties?.Contains("UniPlaySongPlugin") != true)
+            {
+                OpenBuiltInHubFeature(actionId);
+                plugin?.FocusQuickAccessElement("FeatureMusicPlayerButton");
+                return;
+            }
+
+            OpenBuiltInHubFeature(actionId);
+            IsQuickAccessFeaturesOpen = false;
+        }
+
+        private void OpenBuiltInHubFeature(string actionId)
+        {
+            try
+            {
+                if (string.Equals(actionId, HubFeatureWebBrowserId, StringComparison.OrdinalIgnoreCase))
+                {
+                    plugin?.OpenWebBrowserHome();
+                    return;
+                }
+
+                if (string.Equals(actionId, HubFeatureMediaGalleryId, StringComparison.OrdinalIgnoreCase))
+                {
+                    LoadMediaGalleryGamesFromCache();
+                    plugin?.OpenWindow("MediaGalleryGamesWindowStyle|SecondaryMusic");
+                    return;
+                }
+
+                if (string.Equals(actionId, HubFeatureSteamFriendsId, StringComparison.OrdinalIgnoreCase))
+                {
+                    plugin?.OpenWindow("FriendsStyle|SecondaryMusic");
+                    return;
+                }
+
+                if (string.Equals(actionId, HubFeatureSteamStoreId, StringComparison.OrdinalIgnoreCase))
+                {
+                    plugin?.OpenWindow("SteamStoreStyle|FocusFirst|SecondaryMusic");
+                    return;
+                }
+
+                if (string.Equals(actionId, HubFeatureMusicPlayerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    var upsAvailable = Application.Current?.Properties?.Contains("UniPlaySongPlugin") == true;
+                    if (!upsAvailable)
+                    {
+                        plugin?.PlayniteApi?.Dialogs?.ShowMessage(
+                            Loc("HubFeature_MusicPlayerRequiresUPS", "UniPlaySong must be installed to open the Music Player."),
+                            Loc("HubFeature_MusicPlayer", "Music Player"));
+                        return;
+                    }
+
+                    plugin?.OpenWindow("MusicPlayerWindowStyle|FocusFirst");
+                    return;
+                }
+
+                if (string.Equals(actionId, HubFeatureVideoPlayerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    plugin?.OpenVideoPlayer();
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper] Failed to open a built-in Hub feature.");
             }
         }
 
@@ -8033,6 +10831,7 @@ namespace AnikiHelper
 
                 OnPropertyChanged(nameof(HubMemoryItems));
                 OnPropertyChanged(nameof(HasHubMemory));
+                NotifyHubPageDotProperties();
                 OnPropertyChanged(nameof(HubMemorySubtitle));
             }
             catch (Exception ex)
@@ -8044,6 +10843,7 @@ namespace AnikiHelper
 
                 OnPropertyChanged(nameof(HubMemoryItems));
                 OnPropertyChanged(nameof(HasHubMemory));
+                NotifyHubPageDotProperties();
                 OnPropertyChanged(nameof(HubMemorySubtitle));
             }
         }
@@ -8145,6 +10945,7 @@ namespace AnikiHelper
 
                     OnPropertyChanged(nameof(HubAchievementMemoryItems));
                     OnPropertyChanged(nameof(HasHubAchievementMemory));
+                    NotifyHubPageDotProperties();
                     OnPropertyChanged(nameof(HubAchievementMemoryPeriod));
                 }), DispatcherPriority.Background);
             }
@@ -8157,6 +10958,7 @@ namespace AnikiHelper
 
                 OnPropertyChanged(nameof(HubAchievementMemoryItems));
                 OnPropertyChanged(nameof(HasHubAchievementMemory));
+                NotifyHubPageDotProperties();
                 OnPropertyChanged(nameof(HubAchievementMemoryPeriod));
             }
         }
@@ -8370,7 +11172,7 @@ namespace AnikiHelper
                         progress.CurrentProgressValue = 1;
                         progress.Text = "Saving achievements cache...";
 
-                        logger?.Info("[AnikiHelper] Achievement memories loaded: " + items.Count);
+                        global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper] Achievement memories loaded: " + items.Count);
 
                         achievementMemoriesCacheService.Save(items, true);
 
@@ -8491,7 +11293,7 @@ namespace AnikiHelper
 
                     var items = playniteAchievementsReader.LoadAchievementMemories(5000);
 
-                    logger?.Info("[AnikiHelper] Achievement memories loaded: " + items.Count);
+                    global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper] Achievement memories loaded: " + items.Count);
 
                     achievementMemoriesCacheService.Save(items, true);
 
@@ -9155,6 +11957,168 @@ public bool IsInGameOverlaySuspendGameEnabled()
             return char.ToUpperInvariant(firstPart[0]) + firstPart.Substring(1);
         }
 
+        private static readonly string[] DefaultOptionPropertyNames =
+        {
+            nameof(ShowDesktopSidebarSettingsShortcut),
+            nameof(EnableDebugLogs),
+            nameof(IncludeHidden),
+            nameof(TopPlayedMax),
+            nameof(PlaytimeStoredInHours),
+            nameof(PlaytimeUseDaysFormat),
+            nameof(DynamicAutoPrecacheUserEnabled),
+
+            nameof(OpenWelcomeHubOnStartup),
+            nameof(HubVideoCenterPageEnabled),
+            nameof(HubAppsEnabled),
+            nameof(HubAppSlot1ToolName),
+            nameof(HubAppSlot2ToolName),
+            nameof(HubAppSlot3ToolName),
+            nameof(HubAppSlot4ToolName),
+            nameof(HubAppSlot1BackgroundPath),
+            nameof(HubAppSlot2BackgroundPath),
+            nameof(HubAppSlot3BackgroundPath),
+            nameof(HubAppSlot4BackgroundPath),
+            nameof(HubShortcutsDefaultsVersion),
+
+            nameof(EventSoundsEnabled),
+            nameof(NewsScanEnabled),
+            nameof(NewsSourceATitle),
+            nameof(NewsSourceBTitle),
+            nameof(NewsSourceAUrl),
+            nameof(NewsSourceBUrl),
+
+            nameof(CustomFilterIconsFolder),
+            nameof(CustomFilterBackgroundsFolder),
+            nameof(CustomSourceIconsFolder),
+            nameof(CustomBannerAboveCoverFolder),
+            nameof(CustomBannerOnCoverFolder),
+
+            nameof(MediaGalleryProvider),
+            nameof(AnikiVideoPlayerVolume),
+            nameof(VideoNetworkLocation1Name),
+            nameof(VideoNetworkLocation1Path),
+            nameof(VideoNetworkLocation2Name),
+            nameof(VideoNetworkLocation2Path),
+            nameof(VideoNetworkLocation3Name),
+            nameof(VideoNetworkLocation3Path),
+            nameof(VideoNetworkLocation4Name),
+            nameof(VideoNetworkLocation4Path),
+            nameof(VideoMoviesLibraryPath),
+            nameof(VideoSeriesLibraryPath),
+            nameof(VideoAnimeLibraryPath),
+            nameof(VideoCustomLibraryPath),
+            nameof(VideoCustomLibraryEnabled),
+            nameof(VideoCustomLibraryName),
+            nameof(VideoCustomLibraryContentType),
+            nameof(VideoMoviesLibraryPaths),
+            nameof(VideoSeriesLibraryPaths),
+            nameof(VideoAnimeLibraryPaths),
+            nameof(VideoCustomLibraryPaths),
+            nameof(VideoThumbnailFfmpegPath),
+            nameof(VideoFfprobePath),
+            nameof(VideoOnlineArtworkEnabled),
+            nameof(VideoTmdbArtworkEnabled),
+            nameof(VideoTmdbArtworkLanguage),
+            nameof(VideoTvmazeArtworkEnabled),
+            nameof(VideoAnilistArtworkEnabled),
+            nameof(VideoAutoPlayNextEnabled),
+            nameof(VideoPreferredAudioLanguage),
+            nameof(VideoSubtitlePreferenceMode),
+            nameof(VideoPreferredSubtitleLanguage),
+
+            nameof(SteamUpdatesScanEnabled),
+            nameof(SteamPlayerCountEnabled),
+            nameof(SteamStoreEnabled),
+            nameof(SteamStoreLanguage),
+            nameof(SteamStoreRegion),
+            nameof(SteamFriendsEnabled),
+            nameof(ShowOffline),
+            nameof(NotifyOnGameStart),
+            nameof(NotifyOnConnect),
+            nameof(AskSteamUpdateCacheAtStartup),
+
+            nameof(StartupIntroVideoEnabled),
+            nameof(ShutdownVideoEnabled),
+
+            nameof(ScreenSaverEnabled),
+            nameof(ScreenSaverIdleDelayMinutes),
+            nameof(ScreenSaverChangeIntervalSeconds),
+            nameof(ScreenSaverSource),
+            nameof(ScreenSaverUseSplashImages),
+            nameof(ScreenSaverShowLogo),
+            nameof(ScreenSaverShowInfoCard),
+            nameof(ScreenSaverAnimateBackground),
+            nameof(ScreenSaverUseFadeTransitions),
+
+            nameof(GameLaunchSplashEnabled),
+            nameof(GameLaunchSplashPauseUniPlaySong),
+            nameof(GameLaunchSplashShowLogo),
+            nameof(GameLaunchSplashVideoSoundEnabled),
+            nameof(GameLaunchSplashVideoEndBehavior),
+            nameof(GameLaunchSplashVideoVolume),
+            nameof(GameLaunchSplashLogoPosition),
+            nameof(GameLaunchSplashSelectionMode),
+            nameof(GameLaunchSplashCustomPriority1),
+            nameof(GameLaunchSplashCustomPriority2),
+            nameof(GameLaunchSplashCustomPriority3),
+            nameof(GameLaunchSplashCustomPriority4),
+            nameof(GameLaunchSplashCustomPriority5),
+            nameof(GameLaunchSplashMinimumDurationMs),
+            nameof(GameLaunchSplashAutoDetectReadyEnabled),
+            nameof(GameLaunchSplashMaximumWaitMs),
+
+            nameof(WebBrowserHomeUrl),
+
+            nameof(InGameOverlayEnabled),
+            nameof(InGameOverlayHotkey),
+            nameof(InGameOverlayControllerShortcut),
+            nameof(InGameOverlayVirtualKeyboardProvider),
+            nameof(InGameOverlayVirtualKeyboardShortcut),
+            nameof(InGameOverlayGamepadMouseShortcut),
+            nameof(InGameOverlayGameBehavior)
+        };
+
+        /// <summary>
+        /// Restores user-facing Aniki Helper options to their original defaults without deleting
+        /// accounts, favorites, per-game data, histories, caches or theme configuration data.
+        /// </summary>
+        public void RestoreOptionDefaults()
+        {
+            var defaults = new AnikiHelperSettings(plugin, false);
+            var settingsType = typeof(AnikiHelperSettings);
+
+            foreach (var propertyName in DefaultOptionPropertyNames)
+            {
+                try
+                {
+                    var property = settingsType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+                    if (property == null || !property.CanRead || !property.CanWrite)
+                    {
+                        logger?.Warn("[AnikiHelper] Default reset skipped unavailable setting: " + propertyName);
+                        continue;
+                    }
+
+                    property.SetValue(this, property.GetValue(defaults));
+                }
+                catch (Exception ex)
+                {
+                    logger?.Warn(ex, "[AnikiHelper] Failed to restore default value for setting: " + propertyName);
+                }
+            }
+
+            // Keep the current defaults version so a later startup does not treat the reset Hub
+            // shortcuts as an old configuration that still needs migration.
+            HubShortcutsDefaultsVersion = CurrentHubShortcutsDefaultsVersion;
+
+            // Recreate the dynamic Video Center library rows after a full settings reset.
+            InitializeVideoLibraryPathCollections(null);
+
+            RefreshHubApps();
+            EnsureHubCurrentPageInRange();
+            RefreshGameLaunchSplashCustomPriorityOptions();
+            RefreshInGameOverlayNeverSuspendGameItems();
+        }
+
         // ===== ISettings =====
         public void BeginEdit() { }
         public void CancelEdit() { }
@@ -9265,6 +12229,77 @@ public bool IsInGameOverlaySuspendGameEnabled()
             catch
             {
                 // volontairement silencieux
+            }
+        }
+        private bool PrepareSelectedGameLinksWindow()
+        {
+            try
+            {
+                SelectedGameLinks.Clear();
+
+                var selectedGame = plugin?.PlayniteApi?.MainView?.SelectedGames?.FirstOrDefault();
+
+                if (selectedGame == null)
+                {
+                    SelectedGameLinksGameName = string.Empty;
+                    return false;
+                }
+
+                SelectedGameLinksGameName = selectedGame.Name ?? string.Empty;
+
+                if (selectedGame.Links != null)
+                {
+                    foreach (var link in selectedGame.Links)
+                    {
+                        if (link == null || string.IsNullOrWhiteSpace(link.Url))
+                        {
+                            continue;
+                        }
+
+                        var linkUrl = link.Url.Trim();
+                        var linkName = string.IsNullOrWhiteSpace(link.Name)
+                            ? linkUrl
+                            : link.Name.Trim();
+
+                        var host = linkUrl;
+                        if (Uri.TryCreate(linkUrl, UriKind.Absolute, out var uri))
+                        {
+                            if (!string.IsNullOrWhiteSpace(uri.Host))
+                            {
+                                host = uri.IsDefaultPort
+                                    ? uri.Host
+                                    : uri.Authority;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(uri.Scheme))
+                            {
+                                host = uri.Scheme + "://";
+                            }
+                        }
+
+                        var item = new AnikiGameLinkItem
+                        {
+                            Name = linkName,
+                            Url = linkUrl,
+                            Host = host
+                        };
+
+                        item.OpenCommand = new RelayCommand(
+                            () => plugin?.OpenGameLink(linkUrl, linkName)
+                        );
+
+                        SelectedGameLinks.Add(item);
+                    }
+                }
+
+                // Always open the window. The theme displays an empty-state message
+                // when the selected game has no valid links.
+                return true;
+            }
+            catch
+            {
+                SelectedGameLinks.Clear();
+                SelectedGameLinksGameName = string.Empty;
+                return false;
             }
         }
 
@@ -9612,6 +12647,16 @@ public bool IsInGameOverlaySuspendGameEnabled()
         private readonly DispatcherTimer saveDebounceTimer;
 
         public IPlayniteAPI Api => plugin?.PlayniteApi;
+
+        public void OpenVideoCenterLibraryManager()
+        {
+            plugin?.OpenVideoCenterLibraryManager();
+        }
+
+        public void OpenVideoCenterIntroEndingManager()
+        {
+            plugin?.OpenVideoCenterIntroEndingManager();
+        }
 
         [DontSerialize]
         public string HomePluginIconPath
@@ -10183,6 +13228,7 @@ public bool IsInGameOverlaySuspendGameEnabled()
         private static readonly HashSet<string> AutoSaveSettingNames = new HashSet<string>
         {
             nameof(AnikiHelperSettings.OpenWelcomeHubOnStartup),
+            nameof(AnikiHelperSettings.HubVideoCenterPageEnabled),
             nameof(AnikiHelperSettings.HubAppsEnabled),
             nameof(AnikiHelperSettings.HubAppSlot1ToolName),
             nameof(AnikiHelperSettings.HubAppSlot2ToolName),
@@ -10200,6 +13246,7 @@ public bool IsInGameOverlaySuspendGameEnabled()
             nameof(AnikiHelperSettings.ShutdownVideoEnabled),
 
             nameof(AnikiHelperSettings.CustomFilterIconsFolder),
+            nameof(AnikiHelperSettings.CustomFilterBackgroundsFolder),
             nameof(AnikiHelperSettings.CustomSourceIconsFolder),
             nameof(AnikiHelperSettings.CustomBannerAboveCoverFolder),
             nameof(AnikiHelperSettings.CustomBannerOnCoverFolder),
@@ -10218,6 +13265,16 @@ public bool IsInGameOverlaySuspendGameEnabled()
             nameof(AnikiHelperSettings.SteamAccountSteamId64),
             nameof(AnikiHelperSettings.SteamAccountProfileUrl),
             nameof(AnikiHelperSettings.SteamFriendsEnabled),
+
+            nameof(AnikiHelperSettings.ScreenSaverEnabled),
+            nameof(AnikiHelperSettings.ScreenSaverIdleDelayMinutes),
+            nameof(AnikiHelperSettings.ScreenSaverChangeIntervalSeconds),
+            nameof(AnikiHelperSettings.ScreenSaverSource),
+            nameof(AnikiHelperSettings.ScreenSaverUseSplashImages),
+            nameof(AnikiHelperSettings.ScreenSaverShowLogo),
+            nameof(AnikiHelperSettings.ScreenSaverShowInfoCard),
+            nameof(AnikiHelperSettings.ScreenSaverAnimateBackground),
+            nameof(AnikiHelperSettings.ScreenSaverUseFadeTransitions),
 
             nameof(AnikiHelperSettings.GameLaunchSplashEnabled),
             nameof(AnikiHelperSettings.GameLaunchSplashPauseUniPlaySong),
@@ -10313,6 +13370,15 @@ public bool IsInGameOverlaySuspendGameEnabled()
         {
             saveDebounceTimer?.Stop();
             plugin.SavePluginSettings(Settings);
+        }
+
+        public void RestoreDefaultPluginOptions()
+        {
+            saveDebounceTimer?.Stop();
+            Settings.RestoreOptionDefaults();
+            saveDebounceTimer?.Stop();
+            plugin.SavePluginSettings(Settings);
+            RefreshHomeDashboard();
         }
 
         public void OpenLogsFolder()

@@ -1,0 +1,1401 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <sys:String x:Key="AppTitle">Aniki Helper</sys:String>
+    <sys:String x:Key="AppSubtitle">Configurações</sys:String>
+    <sys:String x:Key="AppInfo">O Aniki Helper oferece serviços da Steam, integrações com plugins externos e recursos exclusivos do Aniki para temas compatíveis.</sys:String>
+    
+    <sys:String x:Key="MoreOptionsDesktop">Mais opções estão disponíveis nas configurações do plugin pelo modo desktop do Playnite.</sys:String>
+    <sys:String x:Key="GroupAdditionalFeatures">Recursos adicionais</sys:String>
+
+    <sys:String x:Key="GroupGeneral">Geral</sys:String>
+    <sys:String x:Key="GroupNews">Notícias</sys:String>
+    <sys:String x:Key="GroupDynamicColors">Cores dinâmicas</sys:String>
+    <sys:String x:Key="GameLaunchSplash_VideoVolume_Title">Volume do vídeo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_BackgroundDimming_Title">Escurecimento do fundo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_BackgroundDimming_Help">Ajusta a sobreposição escura permanente aplicada às imagens da tela de inicialização. Os vídeos não são escurecidos. Padrão: 37%.</sys:String>
+<sys:String x:Key="LOCDebugLogsTitle">Depuração</sys:String>
+    <sys:String x:Key="LOCDebugLogsDescription">Ative isto somente para solucionar um problema e quando precisar enviar um relatório de depuração. Isso grava informações detalhadas do Aniki Helper em extensions.log e pode gerar muitas entradas de log.</sys:String>
+    <sys:String x:Key="LOCEnableDebugLogs">Ativar logs de depuração</sys:String>
+    <sys:String x:Key="LOCDebugLogsInfo">Para um relatório de depuração limpo: limpe o arquivo de log, ative o Modo de Depuração, reproduza o erro e depois envie o arquivo extensions.log. O Modo de Depuração é desativado automaticamente após 24 horas, na próxima inicialização do Playnite.</sys:String>
+    <sys:String x:Key="LOCClearLogFile">Limpar arquivo de log</sys:String>
+    <sys:String x:Key="LOCOpenLogsFolder">Abrir pasta de logs</sys:String>
+
+    <!-- ========= HUB FEATURES ========= -->
+    <sys:String x:Key="WelcomeHubStartup_Title">Tela inicial</sys:String>
+    <sys:String x:Key="WelcomeHubStartup_Desc">Escolha qual tela será exibida quando o Playnite iniciar: sua biblioteca ou o Hub.</sys:String>
+    <sys:String x:Key="WelcomeHubStartup_Enable">Abrir o Hub ao iniciar</sys:String>
+
+    <sys:String x:Key="HubApps_Title">Recursos e apps do Hub</sys:String>
+    <sys:String x:Key="HubApps_Desc">Exiba até 4 recursos integrados do Aniki ou Ferramentas de Software do Playnite diretamente no Hub.</sys:String>
+    <sys:String x:Key="HubApps_Enable">Mostrar a página Recursos e Apps no Hub</sys:String>
+    <sys:String x:Key="HubApps_Slot1">Slot 1</sys:String>
+    <sys:String x:Key="HubApps_Slot2">Slot 2</sys:String>
+    <sys:String x:Key="HubApps_Slot3">Slot 3</sys:String>
+    <sys:String x:Key="HubApps_Slot4">Slot 4</sys:String>
+    <sys:String x:Key="HubApps_Help">Escolha até 4 recursos integrados do Aniki ou Ferramentas de Software do Playnite. Os recursos integrados incluem navegador web, Galeria de Capturas, Amigos da Steam, Loja Steam, Player de Música e Aniki Video Center. Você também pode usar um fundo personalizado em qualquer slot; caso contrário, o tema usa um fundo padrão para os recursos do Aniki e um fundo genérico para as Ferramentas de Software.</sys:String>
+    <sys:String x:Key="HubApps_SelectBackgroundDialog">Selecione uma imagem de fundo para este cartão de app do Hub.</sys:String>
+    <sys:String x:Key="BrowseImage">Imagem...</sys:String>
+    <sys:String x:Key="HubApps_None">Nenhum</sys:String>
+    <sys:String x:Key="HubApps_GroupAnikiFeatures">RECURSOS DO ANIKI</sys:String>
+    <sys:String x:Key="HubApps_GroupSoftwareTools">FERRAMENTAS DE SOFTWARE</sys:String>
+    <sys:String x:Key="HubFeature_WebBrowser">Navegador Web Aniki</sys:String>
+    <sys:String x:Key="HubFeature_MediaGallery">Galeria de capturas</sys:String>
+    <sys:String x:Key="HubFeature_SteamFriends">Amigos da Steam</sys:String>
+    <sys:String x:Key="HubFeature_SteamStore">Loja Steam</sys:String>
+    <sys:String x:Key="HubFeature_MusicPlayer">Player de música</sys:String>
+    <sys:String x:Key="HubFeature_VideoPlayer">Aniki Video Center</sys:String>
+    <sys:String x:Key="HubFeature_MusicPlayerRequiresUPS">O UniPlaySong precisa estar instalado para abrir o Player de Música.</sys:String>
+    <sys:String x:Key="HubApps_Loading">Carregando atalhos selecionados...</sys:String>
+    <sys:String x:Key="HubApps_Empty">Escolha recursos ou apps nas configurações do Aniki Helper.</sys:String>
+    <sys:String x:Key="LOCHubAppsTitle">Recursos e Apps</sys:String>
+    <sys:String x:Key="LOCHubAppsSubtitle">Recursos integrados do Aniki e Ferramentas de Software selecionadas</sys:String>
+
+    <sys:String x:Key="WelcomeHubStartup_Help">Se desativado, o Playnite abrirá diretamente na sua biblioteca.</sys:String>
+    <sys:String x:Key="HubVideoCenterPage_Enable">Mostrar a página do Aniki Video Center no Hub</sys:String>
+    <sys:String x:Key="HubVideoCenterPage_Help">Mostra até quatro cartões de mídia em cache de Assistidos recentemente e Adicionados recentemente. A página é ocultada automaticamente quando o Video Center não tem conteúdo.</sys:String>
+
+    <!-- ========= LIBRARY STAT FEATURES ========= -->
+    <sys:String x:Key="GroupLibraryStats">Estatísticas da biblioteca</sys:String>
+    <sys:String x:Key="StatsHelp">Escolha quais jogos serão incluídos nas estatísticas exibidas pelo tema.</sys:String>
+    <sys:String x:Key="IncludeHidden">Incluir jogos ocultos</sys:String>
+    <sys:String x:Key="AutoUpdate">As estatísticas são atualizadas automaticamente quando sua biblioteca muda.</sys:String>
+    <sys:String x:Key="PreviewTotal">Prévia — Total:</sys:String>
+    <sys:String x:Key="Installed">Instalados:</sys:String>
+    <sys:String x:Key="NotInstalled">Não instalados:</sys:String>
+
+    <!-- ========= VIDEO PLAYER ========= -->
+    <sys:String x:Key="VideoPlayer_Title">Aniki Video Center</sys:String>
+    <sys:String x:Key="VideoPlayer_Subtitle">Navegue pelas suas pastas e escolha um vídeo para reproduzir.</sys:String>
+    <sys:String x:Key="VideoPlayer_HomeSubtitle">Continue assistindo ou volte a algo reproduzido recentemente.</sys:String>
+    <sys:String x:Key="VideoPlayer_ContinueWatching">Continuar assistindo</sys:String>
+    <sys:String x:Key="VideoPlayer_FavoriteFolders">Pastas favoritas</sys:String>
+    <sys:String x:Key="VideoPlayer_QuickAccess">Acesso rápido</sys:String>
+    <sys:String x:Key="VideoPlayer_RecentVideos">Reproduzidos recentemente</sys:String>
+    <sys:String x:Key="VideoPlayer_BrowsePc">Navegar no PC</sys:String>
+    <sys:String x:Key="VideoPlayer_FileExplorer">Explorador de arquivos</sys:String>
+    <sys:String x:Key="VideoPlayer_BrowsePcSubtitle">Pastas e unidades</sys:String>
+    <sys:String x:Key="VideoPlayer_Loading">Carregando...</sys:String>
+    <sys:String x:Key="VideoPlayer_FavoriteEmpty">Abra uma pasta no explorador e pressione X para adicioná-la aqui.</sys:String>
+    <sys:String x:Key="VideoPlayer_RecentEmpty">Os vídeos que você abrir aparecerão aqui.</sys:String>
+    <sys:String x:Key="VideoPlayer_AddFavorite">Adicionar favorito</sys:String>
+    <sys:String x:Key="VideoPlayer_RemoveFavorite">Remover favorito</sys:String>
+    <sys:String x:Key="VideoPlayer_ResumeHome">Continuar</sys:String>
+    <sys:String x:Key="VideoPlayer_Home">Início</sys:String>
+    <sys:String x:Key="VideoPlayer_Browse">Navegar</sys:String>
+    <sys:String x:Key="VideoPlayer_BrowseLibraries">Navegar pelas bibliotecas</sys:String>
+    <sys:String x:Key="VideoPlayer_ConfiguredLibraries">Bibliotecas e pastas</sys:String>
+    <sys:String x:Key="VideoPlayer_NoConfiguredLibraries">Nenhuma biblioteca de mídia foi configurada ainda.</sys:String>
+    <sys:String x:Key="VideoPlayer_BrowseHubSubtitle">Abra uma biblioteca configurada, uma pasta de rede ou uma de suas pastas favoritas.</sys:String>
+    <sys:String x:Key="VideoPlayer_HomeMediaLibrary">Biblioteca de mídia</sys:String>
+    <sys:String x:Key="VideoPlayer_HomeMediaLibrarySubtitle">Abra uma biblioteca, explore seus arquivos ou gerencie sua coleção.</sys:String>
+    <sys:String x:Key="VideoPlayer_Open">Abrir</sys:String>
+    <sys:String x:Key="VideoPlayer_Back">Voltar</sys:String>
+    <sys:String x:Key="VideoPlayer_HomeShortcut">Início</sys:String>
+    <sys:String x:Key="VideoPlayer_ThisPC">Este PC</sys:String>
+    <sys:String x:Key="VideoPlayer_HomeEmpty">Nenhum local acessível foi encontrado.</sys:String>
+    <sys:String x:Key="VideoPlayer_Videos">Vídeos</sys:String>
+    <sys:String x:Key="VideoPlayer_Downloads">Downloads</sys:String>
+    <sys:String x:Key="VideoPlayer_Desktop">Área de Trabalho</sys:String>
+    <sys:String x:Key="VideoPlayer_Drive">UNIDADE</sys:String>
+    <sys:String x:Key="VideoPlayer_Folder">PASTA</sys:String>
+    <sys:String x:Key="VideoPlayer_Video">VÍDEO</sys:String>
+    <sys:String x:Key="VideoPlayer_Empty">Nenhum vídeo ou pasta compatível foi encontrado aqui.</sys:String>
+    <sys:String x:Key="VideoPlayer_AccessDenied">Não é possível acessar esta pasta.</sys:String>
+    <sys:String x:Key="VideoPlayer_BrowseError">Não foi possível abrir esta pasta.</sys:String>
+    <sys:String x:Key="VideoPlayer_PlayerUnavailable">Não foi possível inicializar o mecanismo de reprodução do VLC.</sys:String>
+    <sys:String x:Key="VideoPlayer_PlaybackError">O LibVLC não conseguiu reproduzir este vídeo.</sys:String>
+
+    <!-- ========= MEDIA GALLERY ========= -->
+
+    <sys:String x:Key="MediaGallery_Title">Galeria de Capturas</sys:String>
+    <sys:String x:Key="MediaGallery_Desc">O Aniki Helper lê mídias do Screenshots Visualizer e do Screenshot Utilities. Configure suas pastas de capturas nesses plugins; o Aniki Helper apenas lê os dados deles e gera miniaturas para acelerar a navegação no tema.</sys:String>
+
+    <sys:String x:Key="MediaGallery_Provider_Title">Plugin de capturas de tela</sys:String>
+    <sys:String x:Key="MediaGallery_Provider_Visualizer">Screenshots Visualizer</sys:String>
+    <sys:String x:Key="MediaGallery_Provider_UtilitiesLocal">Screenshot Utilities - Local</sys:String>
+    <sys:String x:Key="MediaGallery_Provider_Help">O tema usará a lista de mídia do Aniki Helper em vez de se vincular diretamente ao plugin de screenshots selecionado.</sys:String>
+
+    <sys:String x:Key="MediaGallery_GenerateThumbnails">Miniaturas de mídia</sys:String>
+    <sys:String x:Key="MediaGallery_GenerateThumbnails_Button">Gerar miniaturas</sys:String>
+    <sys:String x:Key="MediaGallery_GenerateThumbnails_Help">Pré-gera miniaturas para todas as imagens dos plugins de capturas. A primeira geração pode levar algum tempo, mas as próximas execuções devem ser mais rápidas.</sys:String>
+
+    <sys:String x:Key="MediaGallery_Status_WindowTitle">Gerar miniaturas</sys:String>
+    <sys:String x:Key="MediaGallery_Status_Scanning">Verificando arquivos de mídia...</sys:String>
+    <sys:String x:Key="MediaGallery_Status_Progress_Detailed">Gerando miniaturas... {0}/{1} verificados, {2} adicionados.</sys:String>
+    <sys:String x:Key="MediaGallery_Status_Done_Detailed">Miniaturas geradas: {0} adicionadas / {1} verificadas ({2} já em cache, {3} falharam).</sys:String>
+    <sys:String x:Key="MediaGallery_Status_Cancelled_Detailed">Geração cancelada: {0} miniaturas adicionadas / {1} arquivos verificados.</sys:String>
+    <sys:String x:Key="MediaGallery_Status_Failed">Falha ao gerar miniaturas.</sys:String>
+
+    <!-- MEDIA GALLERY - THEME / FULLSCREEN OVERRIDES -->
+
+    <sys:String x:Key="LOCAnikiHelperGenerateThumbnailsForGame">Gerar miniaturas para este jogo</sys:String>
+    <sys:String x:Key="LOCAnikiHelperScanningMediaForThisGame">Verificando arquivos de mídia deste jogo...</sys:String>
+    <sys:String x:Key="LOCAnikiHelperThumbnailGenerationCancelled">Geração de miniaturas cancelada.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperGeneratingThumbnailsForGame">Gerando miniaturas para {0}... {1}/{2}</sys:String>
+    <sys:String x:Key="LOCAnikiHelperUpdatingMediaCache">Atualizando cache de mídia...</sys:String>
+    <sys:String x:Key="LOCAnikiHelperThumbnailsGenerated">Miniaturas geradas.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperGeneratingGameThumbnails">Gerar miniaturas</sys:String>
+
+    <sys:String x:Key="LOCAnikiHelperScanningAllMedia">Verificando arquivos de mídia...</sys:String>
+    <sys:String x:Key="LOCAnikiHelperGeneratingThumbnailsProgress">Gerando miniaturas... {0}/{1} verificados, {2} adicionados.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperThumbnailsGeneratedDetailed">Miniaturas geradas: {0} adicionadas / {1} verificadas ({2} já em cache, {3} falharam).</sys:String>
+    <sys:String x:Key="LOCAnikiHelperThumbnailGenerationCancelledDetailed">Geração cancelada: {0} miniaturas adicionadas / {1} arquivos verificados.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperThumbnailGenerationFailed">Falha ao gerar miniaturas.</sys:String>
+  
+    <!-- ========= ACHIEVEMENTS CACHE ========= -->
+    <sys:String x:Key="AchievementCache_Title">Cache de Memórias de Conquistas</sys:String>
+    <sys:String x:Key="AchievementCache_Desc">Reconstrói as memórias de conquistas a partir do PlayniteAchievements. Use isto se ícones, conquistas recentes ou dados de raridade estiverem ausentes ou desatualizados.</sys:String>
+    <sys:String x:Key="AchievementCache_Rebuild">Memórias de Conquistas</sys:String>
+    <sys:String x:Key="AchievementCache_Rebuild_Button">Reconstruir cache</sys:String>
+    <sys:String x:Key="AchievementCache_Rebuild_Help">Verifica o PlayniteAchievements e reconstrói as memórias de conquistas exibidas no tema. Isso pode levar algum tempo em bibliotecas grandes.</sys:String>
+    <sys:String x:Key="AchievementCache_Status_Scanning">Verificando conquistas...</sys:String>
+    <sys:String x:Key="AchievementCache_Status_Done">Cache de memórias de conquistas reconstruído: {0} itens.</sys:String>
+    <sys:String x:Key="AchievementCache_Status_Failed">Falha ao reconstruir o cache de memórias de conquistas.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperRefreshAchievementCacheForGame">Atualizar as memórias deste jogo</sys:String>
+    <!-- ========= CUSTOM ICONS ========= -->
+    <sys:String x:Key="CustomIcons_Title">Recursos personalizados</sys:String>
+    <sys:String x:Key="CustomIcons_Desc">Escolha pastas externas para ícones de filtros, fundos de filtros, ícones de fontes e imagens de banners personalizados. Esses arquivos substituem os visuais padrão do tema sem modificar os arquivos do tema.</sys:String>
+    <sys:String x:Key="CustomIcons_FilterFolder">Pasta de ícones de filtros</sys:String>
+    <sys:String x:Key="CustomIcons_FilterBackgroundFolder">Pasta de fundos de filtros</sys:String>
+    <sys:String x:Key="CustomIcons_SourceFolder">Pasta de ícones de fontes</sys:String>
+    <sys:String x:Key="CustomIcons_BannerAboveCoverFolder">Pasta de banners acima da capa</sys:String>
+    <sys:String x:Key="CustomIcons_BannerOnCoverFolder">Pasta de banners sobre a capa</sys:String>
+    <sys:String x:Key="CustomIcons_Help">Os ícones de filtros e fontes devem ser arquivos PNG com exatamente os nomes exibidos no Playnite. Os fundos de filtros podem usar JPG, JPEG, PNG, WEBP ou BMP com o nome exato da predefinição do filtro, por exemplo Installed.jpg ou Favorites.png. Uma imagem Default é usada quando não há correspondência exata. Use pastas separadas para banners acima da capa e sobre a capa.</sys:String>
+    <sys:String x:Key="BrowseFolder">Procurar...</sys:String>
+    <sys:String x:Key="CustomIcons_SelectFilterFolderDialog">Selecione a pasta que contém seus ícones PNG de filtros.</sys:String>
+    <sys:String x:Key="CustomIcons_SelectFilterBackgroundFolderDialog">Selecione a pasta que contém suas imagens de fundo dos filtros.</sys:String>
+    <sys:String x:Key="CustomIcons_SelectSourceFolderDialog">Selecione a pasta que contém seus ícones PNG de fontes.</sys:String>
+    <sys:String x:Key="CustomIcons_SelectBannerAboveCoverFolderDialog">Selecione a pasta que contém suas imagens PNG de banners acima da capa.</sys:String>
+    <sys:String x:Key="CustomIcons_SelectBannerOnCoverFolderDialog">Selecione a pasta que contém suas imagens PNG de banners sobre a capa.</sys:String>
+
+    <!-- ========= TRACK PLAYTIME FEATURES ========= -->
+    <sys:String x:Key="GroupMonthly">Histórico mensal</sys:String>
+    <sys:String x:Key="ResetSectionTitle">Redefinir acompanhamento do mês atual</sys:String>
+    <sys:String x:Key="BackupSectionTitle">Salvar e restaurar seu histórico</sys:String>
+
+    <sys:String x:Key="MonthlyHelp">Acompanha seu tempo de jogo a cada mês para que o tema possa mostrar estatísticas como tempo jogado neste mês, jogos jogados e seu jogo mais jogado.</sys:String>
+    <sys:String x:Key="CurrentMonthData">Mês atual:</sys:String>
+    <sys:String x:Key="SnapshotTooltip">Mostra quando o acompanhamento do mês atual começou.</sys:String>
+
+    <sys:String x:Key="ResetWarningText">Aviso: isso exclui os dados de acompanhamento do mês atual.</sys:String>
+    <sys:String x:Key="ResetBtn">Redefinir acompanhamento do mês atual</sys:String>
+    <sys:String x:Key="ResetBtnTooltip">Exclui os dados de acompanhamento do mês atual e recomeça a partir de agora.</sys:String>
+    <sys:String x:Key="ResetBtntip">Não use isto a menos que realmente queira apagar o acompanhamento deste mês. As estatísticas mensais do mês atual voltarão a zero após a redefinição.</sys:String>
+
+    <sys:String x:Key="ExportMonthlyBackupBtn">Exportar Estatísticas Mensais</sys:String>
+    <sys:String x:Key="ImportMonthlyBackupBtn">Importar Estatísticas Mensais</sys:String>
+    <sys:String x:Key="ExportMonthlyBackupTooltip">Exporta todos os dados de Estatísticas Mensais para um arquivo de backup JSON.</sys:String>
+    <sys:String x:Key="ImportMonthlyBackupTooltip">Restaura os dados de Estatísticas Mensais a partir de um backup JSON exportado anteriormente.</sys:String>
+    <sys:String x:Key="MonthlyBackupHelp">Exporte ou restaure as estatísticas mensais de jogo salvas pelo Aniki Helper. Isso é útil antes de reinstalar o Playnite ou redefinir sua biblioteca.</sys:String>
+    <sys:String x:Key="MonthlyBackup_SectionTitle">Estatísticas mensais</sys:String>
+    <sys:String x:Key="MonthlyBackup_ScopeNote">Este backup contém apenas dados de Estatísticas Mensais. Ele não afeta a configuração do tema, sua conta Steam, plugins, jogos ou mídias.</sys:String>
+    <sys:String x:Key="DangerZone_Title">Zona de perigo</sys:String>
+    <sys:String x:Key="MonthlyDeleteAll_Help">Exclui permanentemente todos os dados de Estatísticas Mensais salvos pelo Aniki Helper. O acompanhamento do mês atual será reiniciado a partir do momento em que os dados forem excluídos.</sys:String>
+    <sys:String x:Key="MonthlyDeleteAll_Warning">Esta ação não pode ser desfeita, a menos que você tenha exportado um backup anteriormente.</sys:String>
+    <sys:String x:Key="DeleteAllMonthlyStatsBtn">Excluir todas as Estatísticas Mensais</sys:String>
+    <sys:String x:Key="DeleteAllMonthlyStatsTooltip">Exclui permanentemente todas as estatísticas mensais e reinicia o acompanhamento do mês atual a partir de agora.</sys:String>
+    <sys:String x:Key="MonthlyDeleteAll_Confirm">Tem certeza de que deseja excluir permanentemente todos os dados de Estatísticas Mensais? O acompanhamento do mês atual será reiniciado a partir de agora. Esta ação não pode ser desfeita, a menos que você tenha exportado um backup.</sys:String>
+    <sys:String x:Key="MonthlyDeleteAll_Success">Todos os dados de Estatísticas Mensais foram excluídos. O acompanhamento recomeça a partir de agora.</sys:String>
+    <sys:String x:Key="MonthlyDeleteAll_Error">Erro ao excluir dados de Estatísticas Mensais:</sys:String>
+
+    <!-- ========= VIDEO FEATURES ========= -->
+    <sys:String x:Key="Video">Vídeo</sys:String>
+
+    <sys:String x:Key="StartupIntro_Title">Sequência de inicialização</sys:String>
+    <sys:String x:Key="StartupIntro_Desc">Reproduz a sequência de inicialização quando o Playnite inicia.</sys:String>
+    <sys:String x:Key="StartupIntro_Enable">Ativar sequência de inicialização</sys:String>
+    <sys:String x:Key="IntroVideo_Help">Desative isto para iniciar o Playnite sem a sequência de inicialização.</sys:String>
+
+    <sys:String x:Key="ShutdownVideo_Title">Sequência de encerramento</sys:String>
+    <sys:String x:Key="ShutdownVideo_Desc">Reproduz a sequência de encerramento quando o Playnite é fechado.</sys:String>
+    <sys:String x:Key="ShutdownVideo_Enable">Ativar sequência de encerramento</sys:String>
+    <sys:String x:Key="ShutdownVideo_Help">Desative isto para fechar o Playnite sem a sequência de encerramento.</sys:String>
+
+    <!-- ========= SOUND FEATURES ========= -->
+    <sys:String x:Key="EventSounds_Title">Sons de eventos</sys:String>
+    <sys:String x:Key="EventSounds_Desc">Reproduz efeitos sonoros para eventos como iniciar um jogo, iniciar/fechar o Playnite e atualizar a biblioteca. Funciona com os sons incluídos no tema.</sys:String>
+    <sys:String x:Key="EventSounds_Enable">Ativar sons de eventos</sys:String>
+    <sys:String x:Key="EventSounds_Help">Se ativado, desative os sons de interface/eventos do plugin PlayniteSounds para evitar áudio duplicado.</sys:String>
+
+    <!-- ========= GameOverlay FEATURES ========= -->
+    <sys:String x:Key="KeyboardMouse_Tab">Teclado e Mouse</sys:String>
+    <sys:String x:Key="KeyboardMouse_Intro">Use o teclado virtual e controle o mouse do Windows diretamente com seu controle. Esses recursos funcionam independentemente do overlay em jogo e continuam disponíveis enquanto o Playnite Fullscreen estiver em execução.</sys:String>
+    <sys:String x:Key="InGameOverlay_Tab">Overlay em Jogo</sys:String>
+    <sys:String x:Key="InGameOverlay_Title">Overlay em Jogo</sys:String>
+    <sys:String x:Key="InGameOverlay_Desc">Exibe um painel de ações rápidas do Aniki sobre o jogo atual.</sys:String>
+
+    <sys:String x:Key="InGameOverlay_Settings_Title">Configurações do overlay</sys:String>
+    <sys:String x:Key="InGameOverlay_Settings_Desc">Configure o overlay em jogo do Aniki e seu atalho de teclado.</sys:String>
+
+    <sys:String x:Key="InGameOverlay_Enable">Ativar sobreposição no jogo</sys:String>
+    <sys:String x:Key="InGameOverlay_Enable_Help">Ativa o overlay em jogo próprio do Aniki Helper. Desative isto se preferir usar o overlay do Playnite ou outra solução de overlay.</sys:String>
+
+    <sys:String x:Key="InGameOverlay_Hotkey_Title">Atalho da sobreposição</sys:String>
+    <sys:String x:Key="InGameOverlay_Hotkey_Help">Escolha o atalho de teclado usado para abrir a sobreposição no jogo. Reinicie o Playnite após alterar esta configuração.</sys:String>
+
+    <sys:String x:Key="InGameOverlay_ControllerShortcut_Title">Atalho do controle</sys:String>
+    <sys:String x:Key="InGameOverlay_ControllerShortcut_Help">Escolha o atalho do controle usado para abrir a sobreposição no jogo. O suporte ao botão Guide é experimental e pode ser capturado pelo Steam, Windows ou ferramentas de controle.</sys:String>
+    <sys:String x:Key="InGameOverlay_ControllerShortcut_StartBack">Start + Back</sys:String>
+    <sys:String x:Key="InGameOverlay_ControllerShortcut_BackY">Back + Y</sys:String>
+    <sys:String x:Key="InGameOverlay_ControllerShortcut_Guide">Botão Guide</sys:String>
+    <sys:String x:Key="InGameOverlay_ControllerShortcut_Disabled">Desativado</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboard_Title">Teclado virtual</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboard_Desc">Escolha o teclado virtual usado pelo Aniki Helper. Ele pode ser aberto pelo botão do overlay ou pelo atalho direto do controle enquanto o Playnite Fullscreen estiver em execução.</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardProvider_Title">Provedor de teclado</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardProvider_Aniki">Teclado Aniki</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardProvider_Windows">Teclado do Windows</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardProvider_Help">O teclado do Windows usa o último layout selecionado no Windows. Selecione o layout Gamepad uma vez nas configurações dele. A disponibilidade depende da versão do Windows.</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardShortcut_Title">Atalho direto</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardShortcut_L3R3Hold">Segurar LS + RS (padrão)</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardShortcut_BackX">Back / Select / View + X</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardShortcut_GuideX">Guide + X</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardShortcut_Disabled">Desativado</sys:String>
+    <sys:String x:Key="InGameOverlay_VirtualKeyboardShortcut_Help">Segure LS + RS por 600 ms. Guide + X pode ser interceptado pela Steam, Xbox Game Bar, Windows ou ferramentas de controle.</sys:String>
+
+    <sys:String x:Key="InGameOverlay_GamepadMouse_Title">Mouse pelo Gamepad</sys:String>
+    <sys:String x:Key="InGameOverlay_GamepadMouse_Desc">Use o controle como mouse do Windows enquanto o Playnite Fullscreen estiver em execução. O analógico direito move o ponteiro, o analógico esquerdo rola rapidamente, A é o clique esquerdo, X é o clique direito e LT / RT oferecem rolagem precisa.</sys:String>
+    <sys:String x:Key="InGameOverlay_GamepadMouseShortcut_Title">Atalho de ativação</sys:String>
+    <sys:String x:Key="InGameOverlay_GamepadMouseShortcut_BackR3">Segurar Back + RS (padrão)</sys:String>
+    <sys:String x:Key="InGameOverlay_GamepadMouseShortcut_StartL3">Segurar Start + LS</sys:String>
+    <sys:String x:Key="InGameOverlay_GamepadMouseShortcut_GuideY">Segurar Guide + Y</sys:String>
+    <sys:String x:Key="InGameOverlay_GamepadMouseShortcut_Disabled">Desativado</sys:String>
+    <sys:String x:Key="InGameOverlay_GamepadMouseShortcut_Help">Segure o atalho selecionado por 600 ms para ativar ou desativar o Mouse pelo Gamepad. A pode ser mantido pressionado enquanto move o analógico direito para arrastar e soltar. Guide + Y pode ser interceptado pela Steam, Xbox Game Bar, Windows ou ferramentas de controle.</sys:String>
+    <sys:String x:Key="LOCGamepadMouseEnabledToast">Mouse pelo Gamepad ativado</sys:String>
+    <sys:String x:Key="LOCGamepadMouseDisabledToast">Mouse pelo Gamepad desativado</sys:String>
+
+    <sys:String x:Key="InGameOverlay_GameBehavior_Title">Comportamento do jogo com o overlay aberto</sys:String>
+    <sys:String x:Key="InGameOverlay_GameBehavior_DoNothing">Padrão: não fazer nada</sys:String>
+    <sys:String x:Key="InGameOverlay_GameBehavior_SuspendGame">Suspender o jogo enquanto o overlay estiver aberto</sys:String>
+    <sys:String x:Key="InGameOverlay_GameBehavior_Help">Escolha se o Aniki Helper deve deixar o jogo rodando normalmente ou congelar temporariamente o processo do jogo enquanto o overlay estiver aberto para evitar entradas duplicadas.</sys:String>
+    <sys:String x:Key="InGameOverlay_GameBehavior_Warning">Aviso: não recomendado para jogos online, multiplayer, protegidos por anti-cheat ou executados como administrador.</sys:String>
+    <sys:String x:Key="InGameOverlay_NeverSuspendList_Title">Nunca suspender jogos</sys:String>
+    <sys:String x:Key="InGameOverlay_NeverSuspendList_Help">Os jogos adicionados por clique direito → Aniki Helper → Configurações do Overlay → Nunca suspender este jogo aparecem aqui. Desmarque um jogo para removê-lo da lista de nunca suspender.</sys:String>
+    <sys:String x:Key="InGameOverlay_NeverSuspendList_Clear">Limpar lista de nunca suspender</sys:String>
+    <sys:String x:Key="LOCAnikiHelperOverlayNeverSuspendThisGame">Nunca suspender este jogo</sys:String>
+    <sys:String x:Key="LOCAnikiHelperOverlayAllowSuspendThisGame">Permitir suspensão para este jogo</sys:String>
+
+    <sys:String x:Key="InGameOverlay_Limitations_Title">Limitações</sys:String>
+    <sys:String x:Key="InGameOverlay_Limitations_Desc">Este overlay é uma janela transparente exibida sobre o jogo. Ele não é injetado diretamente no jogo como os overlays da Steam ou do Discord.</sys:String>
+    <sys:String x:Key="InGameOverlay_Limitations_Help">Funciona melhor com jogos em tela cheia sem bordas ou em modo janela. Alguns jogos em tela cheia exclusiva, sistemas anti-cheat ou jogos executados com privilégios elevados podem impedir que o overlay apareça corretamente.</sys:String>
+    <sys:String x:Key="LOCInGameOverlayFooterTitle">Aniki Control Center</sys:String>
+    <sys:String x:Key="LOCInGameOverlayNoGameRunning">Nenhum jogo em execução</sys:String>
+    <sys:String x:Key="LOCInGameOverlayNoActiveGame">Nenhum jogo ativo detectado</sys:String>
+    <sys:String x:Key="LOCInGameOverlayLessThanOneMinute">menos de 1 min</sys:String>
+    <sys:String x:Key="LOCInGameOverlayQuitDialogTitle">Sair de {0}?</sys:String>
+    <sys:String x:Key="LOCInGameOverlayQuitDialogMessage">Isso tentará fechar a janela do jogo ativo.</sys:String>
+
+    <sys:String x:Key="LOCInGameOverlayCancel">Cancelar</sys:String>
+    <sys:String x:Key="LOCInGameOverlayConfirmQuit">Sair do jogo</sys:String>
+
+    <sys:String x:Key="LOCInGameOverlayControlCenter">CENTRAL DE CONTROLE</sys:String>
+    <sys:String x:Key="LOCInGameOverlayBackHint">B / Back para fechar</sys:String>
+    <sys:String x:Key="LOCInGameOverlayReturnToPlaynite">Voltar ao Playnite</sys:String>
+    <sys:String x:Key="LOCInGameOverlayReturnToGame">Voltar ao jogo</sys:String>
+    <sys:String x:Key="LOCInGameOverlayQuitGame">Sair do jogo</sys:String>
+    <sys:String x:Key="LOCInGameOverlayGame">Jogo</sys:String>
+    <sys:String x:Key="LOCInGameOverlayLastCaptures">Últimas capturas</sys:String>
+    <sys:String x:Key="LOCInGameOverlayMedia">Mídia</sys:String>
+    <sys:String x:Key="LOCInGameOverlayAchievements">Conquistas</sys:String>
+    <sys:String x:Key="LOCInGameOverlayGameInfo">Informações do jogo</sys:String>
+    <sys:String x:Key="LOCInGameOverlaySource">Fonte</sys:String>
+    <sys:String x:Key="LOCInGameOverlayPlatform">Plataforma</sys:String>
+    <sys:String x:Key="LOCInGameOverlayPlaytime">Tempo de jogo</sys:String>
+    <sys:String x:Key="LOCInGameOverlaySession">Sessão</sys:String>
+    <sys:String x:Key="LOCInGameOverlayMediaAvailable">Capturas</sys:String>
+    <sys:String x:Key="LOCInGameOverlayMediaLatest">Captura mais recente</sys:String>
+    <sys:String x:Key="LOCInGameOverlayAchievementsUnlocked">Desbloqueadas</sys:String>
+    <sys:String x:Key="LOCInGameOverlayAchievementsProgress">Progresso</sys:String>
+    <sys:String x:Key="LOCInGameOverlayAchievementsLatest">Conquista mais recente</sys:String>
+    <sys:String x:Key="LOCInGameOverlayComingSoon">Em breve</sys:String>
+    <sys:String x:Key="LOCInGameOverlayMediaCenterHint">Visualização rápida das capturas vinculadas ao jogo atual.</sys:String>
+    <sys:String x:Key="LOCInGameOverlayMediaFutureHint">Este painel poderá receber controles do UPS / Spotify no futuro sem alterar a lógica da janela do overlay.</sys:String>
+
+    <!-- ========= SPLASH FEATURES ========= -->
+    <sys:String x:Key="SplashScreen">Tela de inicialização</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Title">Tela de lançamento do jogo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Desc">Mostra uma imagem ou vídeo de inicialização quando um jogo começa. Você pode gerenciar telas personalizadas pelo menu de clique direito em um jogo.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Enable">Ativar tela de inicialização do jogo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Help">Desative isto se quiser que os jogos iniciem sem uma tela de inicialização.</sys:String>
+
+    <sys:String x:Key="LOCAnikiHelperSetCustomSplashImage">Definir imagem de inicialização</sys:String>
+    <sys:String x:Key="LOCAnikiHelperReplaceCustomSplashImage">Alterar imagem de inicialização</sys:String>
+    <sys:String x:Key="LOCAnikiHelperPreviewCustomSplashImage">Visualizar imagem de inicialização</sys:String>
+    <sys:String x:Key="LOCAnikiHelperRemoveCustomSplashImage">Remover imagem de inicialização</sys:String>
+    <sys:String x:Key="LOCAnikiHelperOpenCustomSplashFolder">Abrir pasta de imagens de inicialização</sys:String>
+
+    <sys:String x:Key="LOCAnikiHelperChooseSplashImageForGame">Escolha uma imagem de inicialização para {0}</sys:String>
+    <sys:String x:Key="LOCAnikiHelperNoCustomSplashImage">Nenhuma imagem de inicialização personalizada foi definida para este jogo.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperPreviewTitle">Prévia da imagem de inicialização</sys:String>
+
+    <sys:String x:Key="LOCAnikiHelperCustomSplashImageSaved">Imagem de inicialização salva para:</sys:String>
+    <sys:String x:Key="LOCAnikiHelperCustomSplashImageRemoved">Imagem de inicialização removida para:</sys:String>
+    <sys:String x:Key="LOCAnikiHelperSetCustomSplashImageFailed">Não foi possível definir a imagem de inicialização.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperRemoveCustomSplashImageFailed">Não foi possível remover a imagem de inicialização.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperPreviewSplashImageFailed">Não foi possível visualizar a imagem.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperOpenCustomSplashFolderFailed">Não foi possível abrir a pasta de imagens de inicialização.</sys:String>
+
+    <sys:String x:Key="GameLaunchSplash_Mode_Title">Modo de seleção do splash</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Mode_Automatic">Prioridade do jogo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Mode_CustomPriority">Prioridade personalizada</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Mode_AlwaysSource">Prioridade da fonte</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Mode_AlwaysPlatform">Prioridade da plataforma</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Mode_AlwaysGlobal">Somente global</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Mode_Help">Escolha qual fonte da tela de inicialização será tentada primeiro. Os modos de prioridade recorrem às outras fontes; Somente global usa apenas a tela global.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperOpenGameSplashFolder">Abrir pasta de inicialização do jogo</sys:String>
+
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_Title">Posição do logo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_Help">Escolha onde o logo do jogo aparece na tela splash.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_LeftTop">Esquerda superior</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_LeftCenter">Esquerda centro</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_LeftBottom">Esquerda inferior</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_CenterTop">Centro superior</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_Center">Centro</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_CenterBottom">Centro inferior</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_RightTop">Direita superior</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_RightCenter">Direita centro</sys:String>
+    <sys:String x:Key="GameLaunchSplash_LogoPosition_RightBottom">Direita inferior</sys:String>
+    <sys:String x:Key="GameLaunchSplash_ShowLogo">Mostrar logo do jogo na tela de inicialização</sys:String>
+
+    <sys:String x:Key="GameLaunchSplash_GlobalTimers_Title">Temporização da tela de inicialização</sys:String>
+    <sys:String x:Key="GameLaunchSplash_GlobalTimers_Help">A tela de inicialização permanece visível pelo menos durante o tempo mínimo e depois fecha automaticamente assim que a janela real do jogo estiver pronta. Se a detecção nunca funcionar, um limite de segurança fixo de 90 segundos a fecha. Um temporizador personalizado por jogo substitui apenas a duração mínima.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_MinDuration_Title">Duração mínima de exibição</sys:String>
+    <sys:String x:Key="GameLaunchSplash_MinDuration_Help">Define o tempo mínimo que a tela de inicialização permanece visível. Aumente este valor se ela desaparecer rápido demais.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_AutoDetectReady_Enable">Detectar automaticamente quando a janela do jogo estiver pronta</sys:String>
+    <sys:String x:Key="GameLaunchSplash_AutoDetectReady_Help">Quando ativado, o Aniki Helper mantém a tela de inicialização visível pelo menos durante a duração mínima configurada e depois a fecha quando a janela real do jogo é detectada. Temporizadores personalizados por jogo substituem a duração mínima, mas continuam usando a detecção automática.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_MaxDuration_Title">Temporizador de segurança para fechamento automático</sys:String>
+    <sys:String x:Key="GameLaunchSplash_MaxDuration_Help">Define quanto tempo o Aniki Helper espera o jogo assumir o foco. Se o jogo não vier para primeiro plano, a tela de inicialização fecha automaticamente após esse tempo.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_ResetTimer">Redefinir</sys:String>
+
+    <sys:String x:Key="LOCAnikiHelperSetGameSplashMinimumTimer">Definir temporizador mínimo para este jogo</sys:String>
+    <sys:String x:Key="LOCAnikiHelperResetGameSplashMinimumTimer">Redefinir temporizador mínimo para este jogo</sys:String>
+    <sys:String x:Key="LOCAnikiHelperSetGameSplashMinimumTimerPrompt">Duração mínima da tela de inicialização deste jogo, em segundos:</sys:String>
+    <sys:String x:Key="LOCAnikiHelperInvalidTimerValue">Valor de temporizador inválido.</sys:String>
+
+    <sys:String x:Key="GameLaunchSplash_VideoSound_Enable">Ativar som do vídeo splash</sys:String>
+    <sys:String x:Key="GameLaunchSplash_VideoSound_Help">Controla o volume do áudio somente para vídeos de inicialização. Imagens de inicialização não são afetadas.</sys:String>
+    <sys:String x:Key="LOCAnikiHelperManageSplashScreens">Gerenciar telas de inicialização</sys:String>
+    <sys:String x:Key="GameLaunchSplash_VideoEndBehavior_Title">Quando um vídeo splash termina antes</sys:String>
+    <sys:String x:Key="GameLaunchSplash_VideoEndBehavior_Help">Escolha o que é mostrado se o vídeo for mais curto que o temporizador do splash.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_VideoEndBehavior_ShowGameBackground">Mostrar o fundo do jogo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_VideoEndBehavior_KeepLastFrame">Manter o último quadro do vídeo</sys:String>
+
+    <sys:String x:Key="GameLaunchSplash_Library_Title">Gerenciamento de telas de inicialização</sys:String>
+    <sys:String x:Key="GameLaunchSplash_Library_Help">Gerencie a tela de inicialização usada no nível selecionado: global, fonte ou plataforma.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_ManageGlobal">Tela global</sys:String>
+    <sys:String x:Key="GameLaunchSplash_ManageSources">Telas por fonte</sys:String>
+    <sys:String x:Key="GameLaunchSplash_ManagePlatforms">Telas por plataforma</sys:String>
+
+    <sys:String x:Key="SplashManager_WindowTitle">Aniki Helper - Telas de inicialização</sys:String>
+    <sys:String x:Key="SplashManager_AddLocalFiles">Adicionar arquivos locais</sys:String>
+    <sys:String x:Key="SplashManager_SetAsMain">Sempre usar esta imagem</sys:String>
+    <sys:String x:Key="SplashManager_ClearMain">Voltar à escolha aleatória</sys:String>
+    <sys:String x:Key="SplashManager_DeleteSelected">Excluir selecionado</sys:String>
+    <sys:String x:Key="SplashManager_OpenFolder">Abrir pasta</sys:String>
+    <sys:String x:Key="SplashManager_Refresh">Atualizar</sys:String>
+    <sys:String x:Key="SplashManager_Close">Fechar</sys:String>
+    <sys:String x:Key="SplashManager_NoSplashForGame">Nenhuma imagem de inicialização foi adicionada para este jogo ainda.</sys:String>
+    <sys:String x:Key="SplashManager_NoGlobalSplash">Nenhuma imagem de inicialização global foi adicionada ainda.</sys:String>
+    <sys:String x:Key="SplashManager_NoSplashForSource">Nenhuma imagem de inicialização foi adicionada para esta fonte ainda.</sys:String>
+    <sys:String x:Key="SplashManager_NoSplashForPlatform">Nenhuma imagem de inicialização foi adicionada para esta plataforma ainda.</sys:String>
+    <sys:String x:Key="SplashManager_UnablePreviewVideo">Não foi possível visualizar este vídeo.</sys:String>
+    <sys:String x:Key="SplashManager_UnablePreviewFile">Não foi possível visualizar este arquivo.</sys:String>
+    <sys:String x:Key="SplashManager_MainSplashSet">Esta imagem será sempre usada para esta pasta.</sys:String>
+    <sys:String x:Key="SplashManager_RandomRestored">A escolha aleatória foi reativada para esta pasta.</sys:String>
+    <sys:String x:Key="SplashManager_SelectSplashFiles">Selecionar arquivos de inicialização</sys:String>
+    <sys:String x:Key="SplashManager_DeleteConfirm">Excluir este arquivo de inicialização?{0}{1}</sys:String>
+    <sys:String x:Key="SplashManager_SearchImages">Pesquisar imagens</sys:String>
+    <sys:String x:Key="SplashManager_NoGameNameForSearch">Nenhum nome de jogo está disponível para esta pesquisa.</sys:String>
+
+    <sys:String x:Key="SplashPicker_NoItemFound">Nenhum item encontrado.</sys:String>
+    <sys:String x:Key="SplashPicker_OpenFailed">Não foi possível abrir o seletor de telas de inicialização:</sys:String>
+    <sys:String x:Key="SplashPicker_SourceTitle">Telas de inicialização por fonte</sys:String>
+    <sys:String x:Key="SplashPicker_SourceDescription">Selecione uma fonte para gerenciar suas imagens de inicialização. Elas serão usadas para jogos vinculados a essa fonte, como Steam, GOG, Epic, Xbox ou outras bibliotecas.</sys:String>
+    <sys:String x:Key="SplashPicker_SourceOpenFailed">Não foi possível abrir o gerenciador de telas por fonte:</sys:String>
+    <sys:String x:Key="SplashPicker_PlatformTitle">Telas de inicialização por plataforma</sys:String>
+    <sys:String x:Key="SplashPicker_PlatformDescription">Selecione uma plataforma para gerenciar suas imagens de inicialização. Elas serão usadas para jogos vinculados a essa plataforma.</sys:String>
+    <sys:String x:Key="SplashPicker_PlatformOpenFailed">Não foi possível abrir o gerenciador de telas por plataforma:</sys:String>
+    <sys:String x:Key="SplashPicker_GlobalTitle">Global</sys:String>
+    <sys:String x:Key="SplashPicker_GlobalOpenFailed">Não foi possível abrir o gerenciador da tela global:</sys:String>
+
+    <sys:String x:Key="GameLaunchSplash_PauseUniPlaySong_Enable">Pausar o UniPlaySong enquanto a tela de inicialização estiver visível</sys:String>
+    <sys:String x:Key="GameLaunchSplash_PauseUniPlaySong_Help">Pausa temporariamente a música do UniPlaySong durante a tela de inicialização do jogo e retoma quando ela fecha.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_SoundTitle">Som</sys:String>
+
+
+    <!-- ========= DYNAMIC COLORS FEATURES ========= -->
+    <sys:String x:Key="GroupDynColors">Cores dinâmicas</sys:String>
+    <sys:String x:Key="DynColors_Help">Use isto se as cores não combinarem com os fundos atuais dos seus jogos.</sys:String>
+
+    <sys:String x:Key="L_ClearColorCache">Redefinir cache de cores</sys:String>
+    <sys:String x:Key="L_ClearColorCache_Desc">As cores são armazenadas com base no fundo de cada jogo. Se você alterar os fundos, as cores salvas podem ficar desatualizadas.</sys:String>
+    <sys:String x:Key="L_ClearColorCache_Tooltip">Limpar todos os dados de cor armazenados e recriá-los a partir dos fundos atuais.</sys:String>
+    <sys:String x:Key="L_ClearColorCache_Done_Title">Aniki Helper</sys:String>
+    <sys:String x:Key="L_ClearColorCache_Done_Body">Cache de cores limpo. As cores serão recriadas automaticamente.</sys:String>
+    <sys:String x:Key="L_ClearColorCache_Error_Title">Aniki Helper</sys:String>
+    <sys:String x:Key="L_ClearColorCache_Error_Body">Falha ao limpar o cache de cores:</sys:String>
+
+    <sys:String x:Key="L_DynAutoPrecache_Title">Processamento de cores em segundo plano</sys:String>
+    <sys:String x:Key="L_EnableDynamicAutoPrecache">Pré-carregar cores em segundo plano</sys:String>
+    <sys:String x:Key="L_EnableDynamicAutoPrecache_Note">Melhora a fluidez da navegação. Pode impactar levemente o desempenho em PCs mais fracos.</sys:String>
+    <sys:String x:Key="L_EnableDynamicAutoPrecache_Tooltip">Verifique sua biblioteca e prepare os dados de cor automaticamente em segundo plano.</sys:String>
+    <sys:String x:Key="L_CacheManagement_Title">Gerenciamento de cache</sys:String>
+    <sys:String x:Key="L_EnableDynamicAutoPrecache_Desc">Quando ativado, as cores são geradas automaticamente para sua biblioteca em vez de serem criadas durante a navegação.</sys:String>
+
+    <sys:String x:Key="ConfirmClearCache">Redefinir o cache de cores? As cores serão geradas novamente automaticamente.</sys:String>
+    <sys:String x:Key="CacheClearedMsg">Cache de cores limpo.</sys:String>
+
+    <!-- ========= STEAM FEATURES ========= -->
+    <sys:String x:Key="GroupSteamFeatures">Recursos da Steam</sys:String>
+
+    <!-- Steam updates -->
+    <sys:String x:Key="SteamUpdates_GroupTitle">Atualizações da Steam</sys:String>
+    <sys:String x:Key="SteamUpdates_GroupDesc">Quando ativado, o plugin verifica atualizações dos jogos diretamente na Steam. Isso permite que o tema exiba entradas de atualização novas e antigas.</sys:String>
+
+    <sys:String x:Key="SteamUpdates_Title">Atualizações de jogos</sys:String>
+    <sys:String x:Key="SteamUpdates_Desc">Verifica se seus jogos da Steam têm atualizações recentes.</sys:String>
+    <sys:String x:Key="SteamUpdates_Enable">Ativar verificação de atualizações</sys:String>
+    <sys:String x:Key="SteamUpdates_Enable_Help">Ativa ou desativa completamente a verificação de atualizações.</sys:String>
+
+    <!-- Update data -->
+    <sys:String x:Key="SteamInitCache_ProgressTitle">Dados de atualização</sys:String>
+    <sys:String x:Key="SteamInitCache_ProgressDesc">O plugin verifica atualizações dos jogos da Steam enquanto você navega pela biblioteca. Você pode executar uma verificação completa da biblioteca para preencher previamente os dados de atualização de todos os seus jogos em vez de esperar abrir um por um. Isso ajuda a evitar notificações falsas de atualização e melhora o desempenho durante a navegação.</sys:String>
+    <sys:String x:Key="SteamInitCache">Verificar biblioteca</sys:String>
+    <sys:String x:Key="SteamInitCache_Tooltip">Verifica seus jogos da Steam e prepara os dados de atualização.</sys:String>
+    <sys:String x:Key="SteamInitCache_ProgressNote">É recomendado verificar a biblioteca para evitar notificações falsas e melhorar o desempenho.</sys:String>
+    <sys:String x:Key="SteamInitCache_ProgressText">Verificando… {0}/{1}</sys:String>
+    <sys:String x:Key="LOCSteamLastScan">Última verificação:</sys:String>
+    <sys:String x:Key="ConfirmInitSteamCache">Verificar sua biblioteca agora?</sys:String>
+    <sys:String x:Key="InitSteamCacheDoneMsg">Verificação concluída.</sys:String>
+
+    <!-- Current players -->
+    <sys:String x:Key="SteamPlayers_GroupTitle">Jogadores atuais</sys:String>
+    <sys:String x:Key="SteamPlayers_GroupDesc">Exibe a contagem de jogadores ao vivo para jogos compatíveis da Steam.</sys:String>
+
+    <sys:String x:Key="SteamPlayers_Title">Jogadores atuais</sys:String>
+    <sys:String x:Key="SteamPlayers_Desc">Mostra quantas pessoas estão jogando um jogo no momento.</sys:String>
+    <sys:String x:Key="SteamPlayers_Enable">Ativar contagem de jogadores</sys:String>
+    <sys:String x:Key="SteamPlayers_Help">Ativa ou desativa a exibição da contagem de jogadores no tema.</sys:String>
+
+    <!-- Steam Store -->
+    <sys:String x:Key="SteamStore_GroupTitle">Loja Steam</sys:String>
+    <sys:String x:Key="SteamStore_GroupDesc">Configure como o conteúdo da Loja Steam é exibido no tema.</sys:String>
+
+    <sys:String x:Key="SteamStore_Language_Title">Idioma da loja</sys:String>
+    <sys:String x:Key="SteamStore_Language_Desc">Escolha o idioma usado para o conteúdo da Steam Store.</sys:String>
+    <sys:String x:Key="SteamStore_Language_Label">Idioma</sys:String>
+
+    <sys:String x:Key="SteamStore_Country_Title">País da loja</sys:String>
+    <sys:String x:Key="SteamStore_Country_Desc">Escolha o país usado para preços e moeda.</sys:String>
+    <sys:String x:Key="SteamStore_Country_Label">País</sys:String>
+    <sys:String x:Key="SteamStore_Country_Help">Isso afeta os preços regionais e a exibição da moeda.</sys:String>
+
+    <sys:String x:Key="SteamStore_Enable_Title">Integração com a loja</sys:String>
+    <sys:String x:Key="SteamStore_Enable">Ativar Steam Store</sys:String>
+    <sys:String x:Key="SteamStore_Enable_Desc">Ative as seções da Loja Steam dentro do tema.</sys:String>
+    <sys:String x:Key="SteamStore_Enable_Help">Quando desativado, o botão Loja não aparecerá mais no tema.</sys:String>
+
+
+    <!-- Steam account / connection -->
+    <sys:String x:Key="SteamAccount_GroupTitle">Conexão da conta Steam</sys:String>
+    <sys:String x:Key="SteamAccount_GroupDesc">Conecte uma vez para usar Amigos da Steam, Minha Lista de Desejos, Para Você e recomendações personalizadas da Steam.</sys:String>
+    <sys:String x:Key="SteamAccount_ConnectButton">Conectar à Steam</sys:String>
+    <sys:String x:Key="SteamAccount_ReconnectButton">Reconectar à Steam</sys:String>
+    <sys:String x:Key="SteamAccount_CheckButton">Verificar conexão</sys:String>
+    <sys:String x:Key="SteamAccount_DisconnectButton">Desconectar</sys:String>
+    <sys:String x:Key="SteamAccount_StatusLabel">Status da conexão</sys:String>
+    <sys:String x:Key="SteamAccount_SteamIdLabel">Conta Steam:</sys:String>
+    <sys:String x:Key="SteamAccount_ConfiguredBadge">CONFIGURADO</sys:String>
+    <sys:String x:Key="SteamAccount_MissingBadge">AUSENTE</sys:String>
+    <sys:String x:Key="SteamAccount_OptionalBadge">OPCIONAL</sys:String>
+    <sys:String x:Key="SteamAccount_ConnectedTitle">Conectado à Steam</sys:String>
+    <sys:String x:Key="SteamAccount_ConnectedDesc">Sua sessão da Steam está ativa. Amigos da Steam, Minha Lista de Desejos e Para Você estão prontos para uso.</sys:String>
+    <sys:String x:Key="SteamAccount_DisconnectedTitle">Não conectado à Steam</sys:String>
+    <sys:String x:Key="SteamAccount_DisconnectedDesc">Conecte sua conta Steam. A página oficial de login da Steam abre e fecha automaticamente após a entrada.</sys:String>
+    <sys:String x:Key="SteamAccount_ProfileLabel">Perfil Steam / SteamID detectado</sys:String>
+    <sys:String x:Key="SteamAccount_ApiKeyTitle">Chave da Steam Web API</sys:String>
+    <sys:String x:Key="SteamAccount_ApiKeyDesc">Necessária para Amigos da Steam e usada para melhorar as recomendações da Loja com seus jogos possuídos e jogados recentemente. A Loja ainda funciona sem ela, mas os dados de amigos e alguns recursos de personalização não estarão disponíveis.</sys:String>
+    <sys:String x:Key="SteamAccount_ManualSteamIdTitle">SteamID alternativo avançado</sys:String>
+    <sys:String x:Key="SteamAccount_ManualSteamIdDesc">Opcional. Use isto somente se a detecção automática do SteamID falhar.</sys:String>
+    <sys:String x:Key="SteamAccount_PrivacyNotice">Nenhuma chave da Steam Web API é necessária, e sua lista de amigos da Steam não precisa ser pública.</sys:String>
+    <sys:String x:Key="SteamAccount_UnifiedInfoTitle">Uma conexão Steam para tudo</sys:String>
+    <sys:String x:Key="SteamAccount_UnifiedInfoDesc">A mesma conexão alimenta Amigos da Steam, Minha Lista de Desejos, Para Você e suas recomendações personalizadas. Se a sessão expirar, basta conectar novamente.</sys:String>
+    <sys:String x:Key="SteamAccount_UnifiedInfoPrivacy">Nenhuma chave de API necessária. Sua lista de amigos da Steam pode permanecer privada.</sys:String>
+    <sys:String x:Key="SteamAccount_TokenMissingTitle">Os serviços da Steam não estão prontos</sys:String>
+    <sys:String x:Key="SteamAccount_TokenMissingDesc">Sua conta Steam está conectada, mas a sessão precisa ser atualizada. Use Verificar conexão ou desconecte e conecte novamente.</sys:String>
+    <sys:String x:Key="SteamAccount_ClearWebCacheTitle">O login da Steam fica atualizando?</sys:String>
+    <sys:String x:Key="SteamAccount_ClearWebCacheDesc">Um cache web do Playnite danificado pode impedir que a página de login da Steam carregue corretamente.</sys:String>
+    <sys:String x:Key="SteamAccount_ClearWebCacheNote">Isso limpa o cache compartilhado do navegador do Playnite e reinicia o Playnite. Integrações baseadas em navegador podem exigir novo login. Caminho manual: Configurações do Playnite → Avançado → Limpar cache web.</sys:String>
+    <sys:String x:Key="SteamAccount_ClearWebCacheButton">Limpar cache web e reiniciar</sys:String>
+    <sys:String x:Key="SteamAccount_ClearWebCacheConfirm">O Playnite precisa reiniciar para limpar o cache web compartilhado. Integrações baseadas em navegador podem pedir que você faça login novamente. Continuar?</sys:String>
+    <sys:String x:Key="SteamAccount_ClearWebCacheError">Não foi possível reiniciar o Playnite e limpar o cache web. Use Configurações do Playnite → Avançado → Limpar cache web.</sys:String>
+    <sys:String x:Key="SteamFullscreen_DisconnectedSummary">O login da Steam está disponível nas configurações do Aniki Helper no modo Desktop do Playnite.</sys:String>
+    <sys:String x:Key="SteamFullscreen_PrivacyHelp">Conecte por lá, volte ao Fullscreen e selecione Verificar conexão.</sys:String>
+    <sys:String x:Key="SteamFullscreen_ServicesLabel">Serviços da Steam</sys:String>
+    <sys:String x:Key="SteamFullscreen_ServicesReady">Pronto</sys:String>
+    <sys:String x:Key="SteamFullscreen_ServicesMissing">Atualização necessária</sys:String>
+    <sys:String x:Key="SteamFullscreen_ConnectedSummary">Use Verificar conexão se o status exibido estiver desatualizado ou se um recurso da Steam parar de funcionar.</sys:String>
+
+    <sys:String x:Key="SteamFullscreen_AccountLabel">Conta Steam vinculada</sys:String>
+    <sys:String x:Key="SteamFullscreen_SteamIdLabel">SteamID detectado ou configurado</sys:String>
+    <sys:String x:Key="SteamFullscreen_ApiKeyLabel">Chave da Steam Web API</sys:String>
+
+    <sys:String x:Key="SteamFullscreen_StatusReady">Configurado</sys:String>
+    <sys:String x:Key="SteamFullscreen_StatusMissing">Ausente</sys:String>
+
+    <sys:String x:Key="SteamFullscreen_ConfigurationReady">A configuração da Steam está completa.</sys:String>
+    <sys:String x:Key="SteamFullscreen_ConfigurationMissing">A configuração da Steam está incompleta. Mude para o Modo Desktop e abra as configurações do Aniki Helper para conectar sua conta Steam ou inserir as informações ausentes.</sys:String>
+
+    <!-- Steam Friends -->
+    <sys:String x:Key="LOCSteamFriends_Title">Amigos da Steam</sys:String>
+    <sys:String x:Key="LOCSteamFriends_Subtitle">Mostra o status dos seus amigos da Steam dentro do tema Aniki: amigos online, jogos atuais, cartões de perfil e notificações no tema.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_Enable">Ativar integração com Amigos da Steam</sys:String>
+    <sys:String x:Key="LOCSteamFriends_EnableHelp">Ativa ou desativa os dados de Amigos da Steam usados pelo tema.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_Display">Exibição</sys:String>
+    <sys:String x:Key="LOCSteamFriends_OnlineInfo">O tema pode exibir até 15 amigos online ao mesmo tempo. Os amigos são priorizados por status: em jogo primeiro, depois online, ausente e ocupado.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_ShowOffline">Mostrar amigos offline</sys:String>
+    <sys:String x:Key="LOCSteamFriends_OfflineInfo">Amigos offline são opcionais e limitados a 40 ao mesmo tempo para manter a navegação fluida.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_Notifications">Notificações</sys:String>
+    <sys:String x:Key="LOCSteamFriends_NotifyOnGameStart">Notificar quando um amigo iniciar um jogo</sys:String>
+    <sys:String x:Key="LOCSteamFriends_NotifyOnGameStartHelp">Mostra uma notificação no tema quando um amigo da Steam começa a jogar.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_NotifyOnConnect">Notificar quando um amigo ficar online</sys:String>
+    <sys:String x:Key="LOCSteamFriends_NotifyOnConnectHelp">Mostra uma notificação no tema quando um amigo da Steam fica online.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedDetails_Title">Detalhes do jogo</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Section">Jogos jogados por amigos</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Refresh">Atualizar jogos jogados por amigos</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Help">Cria um cache local da Steam usado pela visualização de detalhes para mostrar amigos que já jogaram o jogo selecionado. A verificação pode levar algum tempo dependendo da quantidade de amigos.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Preparing">Preparando atualização dos jogos jogados por amigos...</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Refreshing">Atualizando jogos jogados por amigos... {0}/{1}</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Done">Jogos jogados por amigos atualizados: {0} amigos verificados.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_DoneMarker">atualizado</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Error">Falha ao atualizar jogos jogados por amigos.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_MissingConfig">Conecte sua conta Steam nas configurações do Aniki Helper.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_NoFriends">Nenhum amigo da Steam foi retornado pela sessão Steam conectada.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Empty">O cache de jogos jogados por amigos ainda não foi criado.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Stale">O cache de jogos jogados por amigos está antigo. Última atualização: {0}.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_PlayedCache_Loaded">Cache de jogos jogados por amigos carregado. Última atualização: {0}.</sys:String>
+    <sys:String x:Key="LOCSteamFriends_CurrentPlaying_One">{0} está jogando este jogo agora</sys:String>
+    <sys:String x:Key="LOCSteamFriends_CurrentPlaying_Two">{0} e {1} estão jogando este jogo agora</sys:String>
+    <sys:String x:Key="LOCSteamFriends_CurrentPlaying_Many">{0}, {1} e outros {2} amigos estão jogando este jogo agora</sys:String>
+    <sys:String x:Key="LOCSteamFriends_AlreadyPlayed_One">{0} já jogou este jogo</sys:String>
+    <sys:String x:Key="LOCSteamFriends_AlreadyPlayed_Two">{0} e {1} já jogaram este jogo</sys:String>
+    <sys:String x:Key="LOCSteamFriends_AlreadyPlayed_Many">{0}, {1} e outros {2} amigos já jogaram este jogo</sys:String>
+
+    <!-- ========= News FEATURES ========= -->
+    <sys:String x:Key="GroupAnikiFeatures">Aniki News</sys:String>
+
+    <sys:String x:Key="AnikiNews_Title1">Configurações da fonte</sys:String>
+    <sys:String x:Key="AnikiNews_Title">Configurações de notícias</sys:String>
+
+    <!-- SOURCE A -->
+    <sys:String x:Key="AnikiNews_SourceA_Title">Fonte A</sys:String>
+    <sys:String x:Key="AnikiNews_SourceA_Name">Nome de exibição</sys:String>
+    <sys:String x:Key="AnikiNews_SourceA_Url">URL do feed RSS</sys:String>
+
+    <sys:String x:Key="AnikiNews_SourceA_ClearCache">Redefinir cache da fonte A</sys:String>
+    <sys:String x:Key="AnikiNews_SourceA_ClearCache_Tooltip">Use isto somente se esta fonte parar de carregar corretamente.</sys:String>
+    <sys:String x:Key="AnikiNews_SourceA_ClearCache_Confirm">Redefinir cache da fonte A?</sys:String>
+    <sys:String x:Key="AnikiNews_SourceA_ClearCache_Done">O cache da fonte A foi redefinido.</sys:String>
+
+    <!-- SOURCE B -->
+    <sys:String x:Key="AnikiNews_SourceB_Title">Fonte B</sys:String>
+    <sys:String x:Key="AnikiNews_SourceB_Name">Nome de exibição</sys:String>
+    <sys:String x:Key="AnikiNews_SourceB_Url">URL do feed RSS</sys:String>
+
+    <sys:String x:Key="AnikiNews_SourceB_ClearCache">Redefinir cache da fonte B</sys:String>
+    <sys:String x:Key="AnikiNews_SourceB_ClearCache_Tooltip">Use isto somente se esta fonte parar de carregar corretamente.</sys:String>
+    <sys:String x:Key="AnikiNews_SourceB_ClearCache_Confirm">Redefinir cache da fonte B?</sys:String>
+    <sys:String x:Key="AnikiNews_SourceB_ClearCache_Done">O cache da fonte B foi redefinido.</sys:String>
+
+    <!-- DESCRIPTION -->
+    <sys:String x:Key="AnikiNews_CustomFeed_Desc">Ative ou desative o recurso de notícias.</sys:String>
+    <sys:String x:Key="AnikiNews_CustomFeed_Desc2">Use as fontes padrão ou defina as suas. Feeds inválidos ou vazios voltarão automaticamente para as fontes padrão.</sys:String>
+    <sys:String x:Key="AnikiNews_CustomFeed_Help">Opcional: insira uma URL de feed RSS personalizada.</sys:String>
+    <sys:String x:Key="AnikiNews_CustomFeed_Tooltip">Substitui o feed padrão.</sys:String>
+
+    <!-- GLOBAL CACHE -->
+    <sys:String x:Key="AnikiNews_ClearCache">Redefinir cache de notícias</sys:String>
+    <sys:String x:Key="AnikiNews_ClearCache_Tooltip">Força as notícias a recarregarem.</sys:String>
+    <sys:String x:Key="AnikiNews_ClearCache_Note">Você não precisa usar isto após alterar a URL. A atualização é automática.</sys:String>
+    <sys:String x:Key="AnikiNews_ClearCache_Confirm">Redefinir cache de notícias?</sys:String>
+    <sys:String x:Key="AnikiNews_ClearCache_Done">As notícias foram atualizadas.</sys:String>
+
+    <!-- ENABLE -->
+    <sys:String x:Key="NewsScan_Enable">Ativar notícias</sys:String>
+    <sys:String x:Key="NewsScan_Enable_Help">Desativa todo o carregamento de notícias quando desligado.</sys:String>
+    <sys:String x:Key="NewsScan_Desc">Ative ou desative o recurso de notícias.</sys:String>
+
+    <!-- EXPLANATIONS -->
+    <sys:String x:Key="AnikiNews_CustomFeed_Help2">Informações adicionais</sys:String>
+
+    <sys:String x:Key="NewsScan_Enable_Help2_Line1">Se o campo de URL ficar vazio, um feed padrão será usado automaticamente.</sys:String>
+    <sys:String x:Key="NewsScan_Enable_Help2_Line2">Se você alterar a URL, o cache será atualizado automaticamente.</sys:String>
+    <sys:String x:Key="NewsScan_Enable_Help2_Line3">Você não precisa limpar o cache depois de alterar a URL.</sys:String>
+    <sys:String x:Key="NewsScan_Enable_Help2_Line4">O botão de cache só é útil se o carregamento parar de funcionar corretamente.</sys:String>
+    <sys:String x:Key="NewsScan_Enable_Help2_Line5">Alguns feeds RSS podem não ser compatíveis.</sys:String>
+
+    <!-- EXAMPLES -->
+    <sys:String x:Key="AnikiNews_CustomFeed_Help3">Feeds de exemplo</sys:String>
+
+    <sys:String x:Key="AnikiNews_CustomFeed_Exemple1">IGN Games: https://feeds.feedburner.com/ign/games-all</sys:String>
+    <sys:String x:Key="AnikiNews_CustomFeed_Exemple2">Steam News: https://store.steampowered.com/feeds/news/collection/featured</sys:String>
+    <sys:String x:Key="AnikiNews_CustomFeed_Exemple3">Eurogamer: https://www.eurogamer.net/feed</sys:String>
+    <sys:String x:Key="AnikiNews_CustomFeed_Exemple4">PC Gamer: https://www.pcgamer.com/rss</sys:String>
+    <sys:String x:Key="AnikiNews_CustomFeed_Exemple5">GameSpot: https://www.gamespot.com/feeds/mashup</sys:String>
+
+    <!-- Steam wishlist / account global notifications -->
+    <sys:String x:Key="LOCNotificationTitleDefault">Notificação</sys:String>
+    <sys:String x:Key="LOCNotificationTitlePlayniteNews">Notícias do Playnite</sys:String>
+    <sys:String x:Key="LOCNotificationTitleSteamUpdate">Atualização do jogo</sys:String>
+    <sys:String x:Key="LOCNotificationTitleGameEnded">Sessão de jogo encerrada</sys:String>
+    <sys:String x:Key="LOCNotificationTitleSteamAuth">Conta Steam</sys:String>
+    <sys:String x:Key="LOCNotificationTitleWishlistDeal">Oferta da lista de desejos</sys:String>
+    <sys:String x:Key="LOCNotificationTitleWishlistReleased">Lançamento da lista de desejos</sys:String>
+    <sys:String x:Key="LOCSteamSessionExpiredToast">Sessão da Steam expirada. Reconecte no Modo Desktop.</sys:String>
+    <sys:String x:Key="LOCWishlistDealToast">{0} da sua lista de desejos está em promoção ({1}).</sys:String>
+    <sys:String x:Key="LOCWishlistReleasedToast">{0} da sua lista de desejos já está disponível.</sys:String>
+
+    <!-- Control Center overlay v2 -->
+    <sys:String x:Key="LOCInGameOverlayPlaynite">Playnite</sys:String>
+    <sys:String x:Key="LOCInGameOverlayClose">Fechar</sys:String>
+    <sys:String x:Key="LOCInGameOverlayAudio">Audio Switcher</sys:String>
+    <sys:String x:Key="LOCInGameOverlayApps">Apps</sys:String>
+    <sys:String x:Key="LOCInGameOverlayUniPlaySong">UniPlaySong</sys:String>
+    <sys:String x:Key="LOCInGameOverlayMusic">Player de Música</sys:String>
+    <sys:String x:Key="LOCInGameOverlayAudioCenterHint">Os controles rápidos de áudio ficarão aqui: dispositivo de saída, volume geral e, futuramente, volume por app.</sys:String>
+    <sys:String x:Key="LOCInGameOverlayAudioFutureHint">Esta primeira versão altera apenas o layout da Central de Controle. A fonte de áudio e os controles de volume podem ser conectados depois que a interface for validada.</sys:String>
+
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Title">Ordem de prioridade personalizada</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Help">Usado quando Prioridade personalizada estiver selecionada. Uma fonte já selecionada em um slot fica oculta nos outros slots; Nenhum pode ser usado mais de uma vez.</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_1">Prioridade 1</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_2">Prioridade 2</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_3">Prioridade 3</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_4">Prioridade 4</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_5">Prioridade 5</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Target_GameCustom">Personalizado do jogo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Target_GameBackground">Fundo do jogo</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Target_Platform">Plataforma</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Target_Source">Fonte</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Target_Global">Global</sys:String>
+    <sys:String x:Key="GameLaunchSplash_CustomPriority_Target_None">Nenhum</sys:String>
+
+    <!-- In-game virtual keyboard -->
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboard">Teclado Virtual</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardTitle">Teclado Virtual</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardHint">A: selecionar   X: apagar   Y: espaço   Start: enviar   B: cancelar</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardShift">Shift</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardSpace">Espaço</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardBackspace">Apagar</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardSend">Enviar</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardSendEnter">Enviar + Enter</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardPlaceholder">Digite o texto...</sys:String>
+    <sys:String x:Key="LOCInGameOverlayVirtualKeyboardMode">Layout</sys:String>
+
+
+
+    <!-- Theme configuration backup -->
+    <sys:String x:Key="ThemeConfiguration_SectionTitle">Configuração do tema</sys:String>
+    <sys:String x:Key="ThemeConfiguration_Help">Exporte o arquivo ThemeSettings.json que armazena a personalização do tema ou substitua-o por uma configuração salva por você ou compartilhada por outro usuário. A configuração importada será usada na próxima vez que o modo Fullscreen for aberto.</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ScopeNote">Este backup diz respeito apenas ao arquivo de configuração das opções do tema. Ele não inclui login da Steam, outras configurações do Aniki Helper, estatísticas mensais, plugins instalados, dados de jogos ou mídias.</sys:String>
+    <sys:String x:Key="ExportThemeConfigurationBtn">Exportar configuração</sys:String>
+    <sys:String x:Key="ImportThemeConfigurationBtn">Importar configuração</sys:String>
+    <sys:String x:Key="ExportThemeConfigurationTooltip">Salvar as opções e predefinições atuais de personalização do tema em um arquivo JSON.</sys:String>
+    <sys:String x:Key="ImportThemeConfigurationTooltip">Substituir o arquivo ThemeSettings.json do plugin pela configuração selecionada.</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ExportDialogTitle">Exportar configuração do tema</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ImportDialogTitle">Importar configuração do tema</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ImportConfirm">Importar este arquivo substituirá as opções e predefinições atuais de personalização do tema. Outras configurações do Aniki Helper não serão alteradas. Continuar?</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ExportSuccess">Configuração do tema exportada com sucesso.</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ImportSuccess">Configuração do tema importada com sucesso. Ela será usada na próxima vez que o modo Fullscreen for aberto.</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ExportError">Erro ao exportar a configuração do tema:</sys:String>
+    <sys:String x:Key="ThemeConfiguration_ImportError">Erro ao importar a configuração do tema:</sys:String>
+
+    <!-- Reorganized settings navigation -->
+    <sys:String x:Key="SettingsNav_Home">Início</sys:String>
+    <sys:String x:Key="SettingsNav_ThemeFeatures">Recursos do tema</sys:String>
+    <sys:String x:Key="SettingsNav_Steam">Steam</sys:String>
+    <sys:String x:Key="SettingsNav_FullscreenTools">Recursos Exclusivos</sys:String>
+    <sys:String x:Key="SettingsNav_Advanced">Avançado</sys:String>
+    <sys:String x:Key="SettingsNav_StartupHub">Inicialização e Hub</sys:String>
+    <sys:String x:Key="SettingsNav_MediaAudio">Sons e Sequências</sys:String>
+    <sys:String x:Key="SettingsNav_GalleryAchievements">Galeria e conquistas</sys:String>
+    <sys:String x:Key="SettingsNav_Statistics">Estatísticas</sys:String>
+    <sys:String x:Key="SettingsNav_News">Notícias</sys:String>
+    <sys:String x:Key="SettingsNav_CustomResources">Recursos personalizados</sys:String>
+    <sys:String x:Key="SettingsNav_Account">Conta</sys:String>
+    <sys:String x:Key="SettingsNav_Friends">Amigos</sys:String>
+    <sys:String x:Key="SettingsNav_Store">Loja</sys:String>
+    <sys:String x:Key="SettingsNav_Updates">Atualizações</sys:String>
+    <sys:String x:Key="SettingsNav_CurrentPlayers">Jogadores atuais</sys:String>
+    <sys:String x:Key="SettingsNav_SplashScreen">Tela de inicialização</sys:String>
+    <sys:String x:Key="SettingsNav_Overlay">Overlay em jogo</sys:String>
+    <sys:String x:Key="SettingsNav_KeyboardMouse">Teclado e mouse</sys:String>
+    <sys:String x:Key="SettingsNav_ThemeConfiguration">Backup e restauração</sys:String>
+    <sys:String x:Key="SettingsNav_ColorProcessing">Processamento de cores</sys:String>
+    <sys:String x:Key="SettingsNav_Diagnostics">Diagnósticos</sys:String>
+    <sys:String x:Key="SettingsHome_Intro">Configure serviços da Steam, integrações com plugins externos e recursos exclusivos desenvolvidos para melhorar a experiência do Playnite Fullscreen com temas compatíveis.</sys:String>
+    <sys:String x:Key="SettingsHome_ThemeFeaturesDesc">Configure os dados e mídias que temas compatíveis podem exibir: conteúdo do Hub, áudio, galerias, conquistas, estatísticas, notícias e recursos personalizados.</sys:String>
+    <sys:String x:Key="SettingsHome_ThemeFeaturesHint">Abra Recursos do tema para configurar essas integrações.</sys:String>
+    <sys:String x:Key="SettingsHome_SteamDesc">Conecte sua conta Steam e configure amigos, recomendações da Loja, atualizações e dados de jogadores atuais.</sys:String>
+    <sys:String x:Key="SettingsHome_SteamConnected">Conectado à Steam</sys:String>
+    <sys:String x:Key="SettingsHome_SteamDisconnected">A Steam não está conectada.</sys:String>
+    <sys:String x:Key="SettingsHome_FullscreenDesc">Configure ferramentas que continuam disponíveis enquanto o Playnite Fullscreen estiver em execução: telas de inicialização, overlay em jogo, teclado virtual, mouse pelo gamepad e navegador web amigável ao controle.</sys:String>
+    <sys:String x:Key="SettingsHome_FullscreenHint">Essas ferramentas funcionam independentemente de um tema compatível específico.</sys:String>
+    <sys:String x:Key="SettingsHome_AdvancedDesc">Gerencie backups da configuração do tema e das Estatísticas Mensais, processamento de cores, caches e opções de diagnóstico destinadas à solução de problemas ou uso avançado.</sys:String>
+    <sys:String x:Key="SettingsHome_AdvancedHint">A maioria dos usuários não precisa alterar estas configurações.</sys:String>
+    <sys:String x:Key="SettingsHome_CompatibilityNote">Alguns recursos só aparecem quando o tema Fullscreen ativo integra o Aniki Helper. O plugin não se limita ao Aniki ReMake.</sys:String>
+    <sys:String x:Key="SettingsPage_StartupHubDesc">Configure o comportamento de inicialização e os atalhos de aplicativos expostos aos Hubs de temas compatíveis.</sys:String>
+    <sys:String x:Key="SettingsPage_MediaAudioDesc">Configure sons de eventos do tema e as sequências de inicialização e encerramento usadas por temas compatíveis.</sys:String>
+    <sys:String x:Key="SettingsPage_GalleryAchievementsDesc">Configure provedores de capturas, miniaturas de mídia e caches de memórias de conquistas usados por temas compatíveis.</sys:String>
+    <sys:String x:Key="SettingsPage_StatisticsDesc">Configure estatísticas da biblioteca e acompanhamento mensal do tempo de jogo usados por temas compatíveis.</sys:String>
+    <sys:String x:Key="SettingsPage_NewsDesc">Configure a verificação do Aniki News e fontes de notícias personalizadas opcionais.</sys:String>
+    <sys:String x:Key="SettingsPage_CustomResourcesDesc">Configure recursos personalizados de filtros, fontes e banners de capas expostos a temas compatíveis.</sys:String>
+    <sys:String x:Key="SettingsPage_AccountDesc">Conecte e gerencie a conta Steam usada por todas as integrações Steam.</sys:String>
+    <sys:String x:Key="SettingsPage_FriendsDesc">Configure a exibição de Amigos da Steam, notificações e o comportamento do cache de jogos jogados.</sys:String>
+    <sys:String x:Key="SettingsPage_StoreDesc">Configure recomendações da Loja Steam, idioma e configurações regionais.</sys:String>
+    <sys:String x:Key="SettingsPage_UpdatesDesc">Configure a verificação de atualizações da Steam e o cache inicial de atualizações.</sys:String>
+    <sys:String x:Key="SettingsPage_CurrentPlayersDesc">Configure contagens ao vivo de jogadores atuais da Steam.</sys:String>
+    <sys:String x:Key="SettingsPage_SplashScreenDesc">Configure a mídia exibida enquanto um jogo está iniciando.</sys:String>
+    <sys:String x:Key="SettingsPage_OverlayDesc">Configure o overlay em jogo, seus atalhos e o comportamento do processo do jogo.</sys:String>
+    <sys:String x:Key="SettingsPage_KeyboardMouseDesc">Use o teclado virtual e controle o mouse do Windows diretamente com seu controle enquanto o Playnite Fullscreen estiver em execução.</sys:String>
+    <sys:String x:Key="SettingsPage_ThemeConfigurationDesc">Faça backup ou restaure a configuração do tema Fullscreen e os dados de Estatísticas Mensais do Aniki Helper.</sys:String>
+    <sys:String x:Key="SettingsPage_ColorProcessingDesc">Configure o processamento automático de cores de fundo e seu cache.</sys:String>
+    <sys:String x:Key="SettingsPage_DiagnosticsDesc">Ative logs de diagnóstico e opções de solução de problemas quando solicitado pelo suporte.</sys:String>
+
+    <sys:String x:Key="SettingsHome_FullscreenThemeTitle">Tema Fullscreen</sys:String>
+    <sys:String x:Key="SettingsHome_ActiveTheme">Tema ativo</sys:String>
+    <sys:String x:Key="SettingsHome_HelperIntegration">Integração com Aniki Helper</sys:String>
+    <sys:String x:Key="SettingsHome_Compatible">Compatível</sys:String>
+    <sys:String x:Key="SettingsHome_NoCompatibleTheme">Nenhum tema compatível detectado</sys:String>
+    <sys:String x:Key="SettingsHome_NoCompatibleThemeNote">Alguns recursos do plugin podem não estar visíveis com o tema Fullscreen selecionado atualmente.</sys:String>
+    <sys:String x:Key="SettingsHome_ConfigureSteam">Configurar Steam</sys:String>
+    <sys:String x:Key="SettingsHome_MediaIntegrationsTitle">Integrações com Plugins Externos</sys:String>
+    <sys:String x:Key="SettingsHome_MediaIntegrationsNote">Esses plugins externos são opcionais. O status deles é mostrado aqui por conveniência.</sys:String>
+    <sys:String x:Key="SettingsHome_SplashScreen">Tela de Inicialização</sys:String>
+    <sys:String x:Key="SettingsHome_Overlay">Overlay</sys:String>
+    <sys:String x:Key="SettingsHome_VirtualKeyboard">Teclado virtual</sys:String>
+    <sys:String x:Key="SettingsHome_GamepadMouse">Mouse pelo Gamepad</sys:String>
+    <sys:String x:Key="SettingsHome_ConfigureFullscreenTools">Configurar Recursos Exclusivos</sys:String>
+    <sys:String x:Key="SettingsStatus_Installed">Instalado</sys:String>
+    <sys:String x:Key="SettingsStatus_NotInstalled">Não instalado</sys:String>
+    <sys:String x:Key="SettingsStatus_Enabled">Ativado</sys:String>
+    <sys:String x:Key="SettingsStatus_Disabled">Desativado</sys:String>
+
+    <sys:String x:Key="SettingsHome_ConfigureThemeFeatures">Configurar recursos do tema</sys:String>
+    <sys:String x:Key="SettingsHome_WelcomeHub">Hub de boas-vindas ao iniciar</sys:String>
+    <sys:String x:Key="SettingsHome_HubApplications">Aplicativos do Hub</sys:String>
+    <sys:String x:Key="SettingsHome_EventSounds">Sons de eventos</sys:String>
+    <sys:String x:Key="SettingsHome_StartupVideo">Sequência de inicialização</sys:String>
+    <sys:String x:Key="SettingsHome_AnikiNews">Aniki News</sys:String>
+    <sys:String x:Key="SettingsHome_SteamFriends">Amigos da Steam</sys:String>
+    <sys:String x:Key="SettingsHome_SteamStore">Loja Steam</sys:String>
+    <sys:String x:Key="SettingsHome_SteamUpdates">Verificação de atualizações</sys:String>
+    <sys:String x:Key="SettingsHome_CurrentPlayers">Jogadores atuais</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotProvider">Provedor de capturas de tela</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotProviderNote">Escolha Screenshots Visualizer ou Screenshot Utilities. Apenas um provedor é necessário. Screenshot Utilities também requer seu Local Provider.</sys:String>
+
+    <sys:String x:Key="SettingsHome_Install">Instalar</sys:String>
+    <sys:String x:Key="SettingsHome_ChooseAndInstall">Escolher e instalar</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotLocalProvider">Provedor local</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotChoice_Title">Instalar um provedor de capturas</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotChoice_Message">Escolha o provedor de capturas que deseja instalar. Apenas um provedor é necessário.</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotChoice_Visualizer">Screenshots Visualizer</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotChoice_Utilities">Screenshot Utilities</sys:String>
+    <sys:String x:Key="SettingsHome_ScreenshotChoice_Cancel">Cancelar</sys:String>
+    <sys:String x:Key="SettingsHome_AddonInstallError">O Playnite não conseguiu abrir o instalador de extensões.</sys:String>
+
+    <!-- Controller-friendly WebView2 browser -->
+    <sys:String x:Key="SettingsNav_WebBrowser">Navegador web</sys:String>
+    <sys:String x:Key="SettingsPage_WebBrowserDesc">Gerencie favoritos e os dados dedicados do navegador usados no modo Fullscreen.</sys:String>
+    <sys:String x:Key="WebBrowser_SectionTitle">Navegador web</sys:String>
+    <sys:String x:Key="WebBrowser_FavoritesSettingsTitle">Favoritos do Fullscreen</sys:String>
+    <sys:String x:Key="WebBrowser_FavoritesSettingsHelp">Adicione os sites que aparecerão como cartões amigáveis ao controle na tela inicial do navegador no modo Fullscreen.</sys:String>
+    <sys:String x:Key="WebBrowser_FavoriteNameLabel">Nome</sys:String>
+    <sys:String x:Key="WebBrowser_FavoriteNameTooltip">Exemplo: Discord</sys:String>
+    <sys:String x:Key="WebBrowser_FavoriteUrlLabel">Endereço web</sys:String>
+    <sys:String x:Key="WebBrowser_FavoriteUrlTooltip">Exemplo: https://discord.com/app</sys:String>
+    <sys:String x:Key="WebBrowser_AddFavoriteButton">Adicionar favorito</sys:String>
+    <sys:String x:Key="WebBrowser_NoFavoritesDesktop">Nenhum favorito foi configurado ainda.</sys:String>
+    <sys:String x:Key="WebBrowser_MoveFavoriteUp">Mover para cima</sys:String>
+    <sys:String x:Key="WebBrowser_MoveFavoriteDown">Mover para baixo</sys:String>
+    <sys:String x:Key="WebBrowser_DeleteFavoriteButton">Excluir</sys:String>
+    <sys:String x:Key="WebBrowser_FavoritesApplyNote">As alterações serão usadas na próxima vez que a tela inicial do navegador for aberta. Nomes e endereços também podem ser editados diretamente na lista.</sys:String>
+    <sys:String x:Key="WebBrowser_FavoriteInvalidUrl">Digite um endereço HTTP ou HTTPS válido.</sys:String>
+    <sys:String x:Key="WebBrowser_FavoriteAlreadyExists">Este endereço já está nos seus favoritos.</sys:String>
+    <sys:String x:Key="WebBrowser_DataTitle">Dados do navegador</sys:String>
+    <sys:String x:Key="WebBrowser_CacheHelp">Limpe os arquivos temporários de sites se uma página estiver sendo exibida incorretamente ou usando muito espaço em disco.</sys:String>
+    <sys:String x:Key="WebBrowser_ClearCacheButton">Limpar cache web</sys:String>
+    <sys:String x:Key="WebBrowser_ClearCacheNote">Isso mantém cookies e sessões de sites, então você deve continuar conectado.</sys:String>
+    <sys:String x:Key="WebBrowser_ResetDataHelp">Exclui todos os dados armazenados pelo navegador Aniki, incluindo cookies, sessões, histórico e cache.</sys:String>
+    <sys:String x:Key="WebBrowser_ResetDataButton">Excluir todos os dados do navegador</sys:String>
+    <sys:String x:Key="WebBrowser_SessionNote">Logins de sites, cookies e cache são armazenados em um perfil WebView2 dedicado ao Aniki Helper. O plugin não lê nem exporta tokens de conta.</sys:String>
+    <sys:String x:Key="WebBrowser_OpenHomeButton">Abrir navegador web</sys:String>
+    <sys:String x:Key="WebBrowser_FullscreenHelp">Abra a tela inicial do navegador amigável ao controle com pesquisa e seus favoritos salvos.</sys:String>
+    <sys:String x:Key="WebBrowser_HomeTitle">Navegador Web</sys:String>
+    <sys:String x:Key="WebBrowser_HomeDescription">Pesquise na web ou abra um dos seus favoritos.</sys:String>
+    <sys:String x:Key="WebBrowser_SearchPlaceholder">Pesquisar ou inserir um endereço web</sys:String>
+    <sys:String x:Key="WebBrowser_SearchButton">Abrir</sys:String>
+    <sys:String x:Key="WebBrowser_FavoritesTitle">Favoritos</sys:String>
+    <sys:String x:Key="WebBrowser_NoFavorites">Ainda não há favoritos. Adicione-os nas configurações do Aniki Helper no modo Desktop.</sys:String>
+    <sys:String x:Key="WebBrowser_HomeControllerLegend">D-Pad / LS  Navegar     RS  Cursor     A  Selecionar / Clicar     X  Teclado     B  Fechar     View  Fechar imediatamente</sys:String>
+    <sys:String x:Key="WebBrowser_OneFavorite">1 favorito</sys:String>
+    <sys:String x:Key="WebBrowser_FavoriteCount">{0} favoritos</sys:String>
+    <sys:String x:Key="WebBrowser_WindowTitle">Navegador Web Aniki</sys:String>
+    <sys:String x:Key="WebBrowser_ControllerLegend">RS  Cursor     LS  Rolar     A  Clicar     LB  Anterior     RB  Próximo     B  Voltar / Início     View  Fechar     X  Teclado     Y  Endereço     Start  Enter</sys:String>
+    <sys:String x:Key="WebBrowser_LegendSelect">Selecionar</sys:String>
+    <sys:String x:Key="WebBrowser_LegendPrevious">Anterior</sys:String>
+    <sys:String x:Key="WebBrowser_LegendNext">Próximo</sys:String>
+    <sys:String x:Key="WebBrowser_LegendEnter">Enter</sys:String>
+    <sys:String x:Key="WebBrowser_LegendBackHome">Voltar / Início</sys:String>
+    <sys:String x:Key="WebBrowser_LegendCloseView">Fechar visualização web</sys:String>
+    <sys:String x:Key="WebBrowser_LegendKeyboard">Teclado</sys:String>
+    <sys:String x:Key="WebBrowser_AddressPrompt">Digite um endereço ou uma pesquisa</sys:String>
+    <sys:String x:Key="WebBrowser_OpenError">Não foi possível abrir o navegador web.</sys:String>
+    <sys:String x:Key="WebBrowser_NavigationError">Não foi possível abrir o endereço web.</sys:String>
+    <sys:String x:Key="WebBrowser_InvalidAddress">Digite um endereço HTTP ou HTTPS válido.</sys:String>
+    <sys:String x:Key="WebBrowser_RuntimeMissing">O Microsoft Edge WebView2 Runtime é necessário para usar o navegador.</sys:String>
+    <sys:String x:Key="WebBrowser_Initializing">Inicializando navegador web…</sys:String>
+    <sys:String x:Key="WebBrowser_Loading">Carregando…</sys:String>
+    <sys:String x:Key="WebBrowser_LoadFailed">Falha ao carregar a página</sys:String>
+    <sys:String x:Key="WebBrowser_BlockedProtocol">Link incompatível bloqueado</sys:String>
+    <sys:String x:Key="WebBrowser_DownloadBlocked">Downloads estão desativados</sys:String>
+    <sys:String x:Key="WebBrowser_ProcessFailed">O processo do navegador foi encerrado</sys:String>
+    <sys:String x:Key="WebBrowser_CacheCleared">O cache do navegador web foi limpo. Suas sessões de sites foram mantidas.</sys:String>
+    <sys:String x:Key="WebBrowser_CacheClearFailed">Não foi possível limpar o cache do navegador web.</sys:String>
+    <sys:String x:Key="WebBrowser_ResetDataConfirm">Isso excluirá cookies, sessões salvas, histórico de navegação, cache e todos os outros dados do navegador Aniki. Você será desconectado de todos os sites. Continuar?</sys:String>
+    <sys:String x:Key="WebBrowser_ResetDataTitle">Redefinir dados do navegador</sys:String>
+    <sys:String x:Key="WebBrowser_DataReset">Todos os dados do navegador web Aniki foram excluídos.</sys:String>
+    <sys:String x:Key="WebBrowser_DataResetFailed">Não foi possível excluir os dados do navegador web.</sys:String>
+    <sys:String x:Key="GameLinks_WindowTitle">Links do jogo</sys:String>
+    <sys:String x:Key="GameLinks_OpenHint">Abra um site relacionado a este jogo.</sys:String>
+    <sys:String x:Key="GameLinks_ButtonTooltip">Links do jogo</sys:String>
+
+    <!-- ========= ANIKI SCREENSAVER ========= -->
+    <sys:String x:Key="SettingsNav_ScreenSaver">Aniki ScreenSaver</sys:String>
+    <sys:String x:Key="SettingsPage_ScreenSaverDesc">Apresenta automaticamente jogos da sua biblioteca após um período de inatividade.</sys:String>
+    <sys:String x:Key="ScreenSaver_Enable">Ativar Aniki ScreenSaver</sys:String>
+    <sys:String x:Key="ScreenSaver_Enable_Help">O ScreenSaver só inicia no modo Fullscreen enquanto o Playnite estiver em primeiro plano, nenhum jogo estiver em execução e nenhuma janela secundária do Aniki estiver aberta. Qualquer entrada o fecha imediatamente.</sys:String>
+    <sys:String x:Key="ScreenSaver_IdleDelay_Title">Iniciar após inatividade</sys:String>
+    <sys:String x:Key="ScreenSaver_ChangeInterval_Title">Trocar de jogo a cada</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_Title">Fonte dos jogos</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_Help">Escolha qual parte da sua biblioteca do Playnite será usada. Jogos ocultos são sempre excluídos.</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_AllGames">Todos os jogos</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_InstalledGames">Jogos instalados</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_Favorites">Favoritos</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_NeverPlayed">Nunca jogados</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_RecentlyAdded">Adicionados recentemente</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_CurrentFilter">Filtro atual do Playnite</sys:String>
+    <sys:String x:Key="ScreenSaver_Source_WeightedRandom">Seleção aleatória ponderada</sys:String>
+    <sys:String x:Key="ScreenSaver_UseSplashImages">Usar imagens de Tela de Inicialização quando disponíveis</sys:String>
+    <sys:String x:Key="ScreenSaver_UseSplashImages_Help">Usa a mesma prioridade de imagens configurada para as Telas de Inicialização dos jogos. Vídeos são ignorados e o fundo do jogo é usado no lugar.</sys:String>
+    <sys:String x:Key="ScreenSaver_ShowLogo">Mostrar logo do jogo</sys:String>
+    <sys:String x:Key="ScreenSaver_ShowInfoCard">Mostrar cartão de informações do jogo</sys:String>
+    <sys:String x:Key="ScreenSaver_AnimateBackground">Animar fundos com zoom lento</sys:String>
+    <sys:String x:Key="ScreenSaver_UseFadeTransitions">Usar transições de fade entre jogos</sys:String>
+    <sys:String x:Key="ScreenSaver_Preview">Visualizar ScreenSaver</sys:String>
+    <sys:String x:Key="ScreenSaver_Preview_Help">A prévia abre imediatamente. Pressione qualquer entrada de teclado, mouse ou controle para fechá-la.</sys:String>
+    <sys:String x:Key="ScreenSaver_Info_Playtime">Tempo de jogo</sys:String>
+    <sys:String x:Key="ScreenSaver_Info_Achievements">Conquistas</sys:String>
+    <sys:String x:Key="ScreenSaver_Info_LastPlayed">Última vez jogado</sys:String>
+    <sys:String x:Key="ScreenSaver_Info_NoAchievements">Sem dados</sys:String>
+    <sys:String x:Key="ScreenSaver_Info_NeverPlayed">Nunca</sys:String>
+    <sys:String x:Key="ScreenSaver_Info_Installed">Instalado</sys:String>
+    <sys:String x:Key="ScreenSaver_Info_NotInstalled">Não instalado</sys:String>
+    <sys:String x:Key="ScreenSaver_Time_Minutes">{0} min</sys:String>
+    <sys:String x:Key="ScreenSaver_Time_HoursMinutes">{0} h {1} min</sys:String>
+
+    <!-- ========= VIDEO PLAYER - PLAYBACK CONTROLS ========= -->
+    <sys:String x:Key="VideoPlayer_Previous">Anterior</sys:String>
+    <sys:String x:Key="VideoPlayer_PlayPause">Reproduzir / Pausar</sys:String>
+    <sys:String x:Key="VideoPlayer_Next">Próximo</sys:String>
+    <sys:String x:Key="VideoPlayer_Audio">Áudio</sys:String>
+    <sys:String x:Key="VideoPlayer_Subtitles">Legendas</sys:String>
+    <sys:String x:Key="VideoPlayer_Chapters">Capítulos</sys:String>
+    <sys:String x:Key="VideoPlayer_More">Mais</sys:String>
+    <sys:String x:Key="VideoPlayer_VolumeDown">Volume -</sys:String>
+    <sys:String x:Key="VideoPlayer_VolumeUp">Volume +</sys:String>
+    <sys:String x:Key="VideoPlayer_Current">Atual</sys:String>
+    <sys:String x:Key="VideoPlayer_AudioTrackNumber">Faixa de áudio {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_AudioTracks">Faixas de áudio</sys:String>
+    <sys:String x:Key="VideoPlayer_NoAudioTracks">Nenhuma faixa de áudio está disponível.</sys:String>
+    <sys:String x:Key="VideoPlayer_SubtitlesOff">Desativadas</sys:String>
+    <sys:String x:Key="VideoPlayer_SubtitleTrackNumber">Faixa de legenda {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_SubtitleTracks">Legendas</sys:String>
+    <sys:String x:Key="VideoPlayer_NoSubtitleTracks">Nenhuma faixa de legenda está disponível.</sys:String>
+    <sys:String x:Key="VideoPlayer_ChapterNumber">Capítulo {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_NoChapters">Este vídeo não possui capítulos.</sys:String>
+    <sys:String x:Key="VideoPlayer_AspectRatio">Proporção</sys:String>
+    <sys:String x:Key="VideoPlayer_PlaybackSpeed">Velocidade de reprodução</sys:String>
+    <sys:String x:Key="VideoPlayer_VideoInformation">Informações do vídeo</sys:String>
+    <sys:String x:Key="VideoPlayer_ControllerShortcuts">Atalhos do controle</sys:String>
+    <sys:String x:Key="VideoPlayer_RestartBeginning">Reiniciar do começo</sys:String>
+    <sys:String x:Key="VideoPlayer_AspectOriginal">Original</sys:String>
+    <sys:String x:Key="VideoPlayer_AspectFill">Preencher tela</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoResolution">Resolução: {0} × {1}</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoVideoCodec">Codec de vídeo: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoFps">Taxa de quadros: {0:0.###} FPS</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoVideoBitrate">Taxa de bits do vídeo: {0:0.##} Mbps</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoAudioCodec">Codec de áudio: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoChannels">Canais de áudio: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoAudioRate">Taxa de áudio: {0} Hz</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoDuration">Duração: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoFileSize">Tamanho do arquivo: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_InfoUnavailable">Nenhuma informação técnica está disponível para este vídeo.</sys:String>
+    <sys:String x:Key="VideoPlayer_ShortcutNavigate">D-Pad / Analógico Esquerdo    Navegar pelos controles</sys:String>
+    <sys:String x:Key="VideoPlayer_ShortcutSelect">A    Selecionar / Mostrar controles</sys:String>
+    <sys:String x:Key="VideoPlayer_ShortcutBack">B    Voltar / Ocultar controles</sys:String>
+    <sys:String x:Key="VideoPlayer_ShortcutPlayPause">X    Reproduzir / Pausar</sys:String>
+    <sys:String x:Key="VideoPlayer_ShortcutVolume">D-Pad Cima / Baixo    Volume</sys:String>
+    <sys:String x:Key="VideoPlayer_ShortcutSeek">LB / RB    -10s / +10s</sys:String>
+    <sys:String x:Key="VideoPlayer_ShortcutSeekHold">Segurar LB / RB    Busca contínua</sys:String>
+    <sys:String x:Key="VideoPlayer_Resume">Continuar</sys:String>
+    <sys:String x:Key="VideoPlayer_StartBeginning">Começar do início</sys:String>
+    <sys:String x:Key="VideoPlayer_Close">Fechar</sys:String>
+    <sys:String x:Key="VideoPlayer_ResumePrompt">Continuar de {0}?</sys:String>
+
+    <sys:String x:Key="SettingsReset_SectionTitle">Restaurar configurações padrão</sys:String>
+    <sys:String x:Key="SettingsReset_Description">Restaure todas as opções do Aniki Helper para seus valores padrão originais.</sys:String>
+    <sys:String x:Key="SettingsReset_ScopeNote">Contas conectadas, favoritos do navegador, histórico e dados de retomada de vídeos, capturas, dados por jogo, caches e configuração do tema são mantidos.</sys:String>
+    <sys:String x:Key="SettingsReset_Button">Restaurar padrões</sys:String>
+    <sys:String x:Key="SettingsReset_Tooltip">Restaurar as opções do Aniki Helper para os valores padrão.</sys:String>
+    <sys:String x:Key="SettingsReset_Confirm">Restaurar todas as opções do Aniki Helper para os valores padrão? Suas escolhas atuais serão sobrescritas, mas contas conectadas e dados pessoais serão mantidos.</sys:String>
+    <sys:String x:Key="SettingsReset_Success">As opções do Aniki Helper foram restauradas para os valores padrão.</sys:String>
+    <sys:String x:Key="SettingsReset_Error">Não foi possível restaurar as configurações padrão.</sys:String>
+
+    <sys:String x:Key="VideoPlayer_NetworkLocations">Locais de rede</sys:String>
+    <sys:String x:Key="VideoPlayer_NetworkFolders">Pastas de rede</sys:String>
+    <sys:String x:Key="VideoPlayer_NetworkLocationsSubtitle">Pastas de rede configuradas</sys:String>
+    <sys:String x:Key="VideoPlayer_NetworkEmpty">Nenhum local de rede está configurado. Adicione-os em Aniki Helper &gt; Recursos Exclusivos &gt; Aniki Video Center.</sys:String>
+    <sys:String x:Key="VideoPlayer_NetworkUnavailable">Indisponível</sys:String>
+    <sys:String x:Key="VideoPlayer_NetworkMediaUnavailableRetry">Local de rede indisponível ou despertando. Tente novamente em alguns instantes.</sys:String>
+    <sys:String x:Key="VideoPlayer_MediaUnavailableRetry">Mídia indisponível. Tente novamente em alguns instantes.</sys:String>
+    <sys:String x:Key="VideoPlayer_NetworkError">Não foi possível verificar os locais de rede configurados.</sys:String>
+    <sys:String x:Key="VideoPlayer_Network">REDE</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_Title">Artwork online</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_TmdbConfigHelp">Quando um token estiver configurado, o TMDB é priorizado para filmes, séries e animes. Adicione seu TMDB API Read Access Token abaixo para ativar artwork localizado.</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_TmdbConfigTitle">ARTWORK TMDB — FILMES E SÉRIES</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_EnableHelp">Artwork local sempre tem prioridade. Com um token TMDB, filmes e séries tentam o TMDB primeiro; TVMaze e AniList continuam como alternativas automáticas sem chave.</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_Enable">Ativar artwork online</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_Desc">Busca artwork automaticamente quando nenhuma imagem local está disponível. O Aniki seleciona o provedor adequado automaticamente.</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_MoviesTitle">FILMES — TMDB</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_SeriesTitle">SÉRIES DE TV — TMDB / TVMAZE</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_AnimeTitle">ANIME — TMDB / ANILIST</sys:String>
+    <sys:String x:Key="VideoTvmaze_Enable">Ativar scraper de séries do TVMaze</sys:String>
+    <sys:String x:Key="VideoTvmaze_Help">Nenhuma chave de API é necessária. O TVMaze é usado como alternativa para séries de TV quando o TMDB está indisponível ou não encontra uma correspondência segura.</sys:String>
+    <sys:String x:Key="VideoAnilist_Enable">Ativar scraper de anime do AniList</sys:String>
+    <sys:String x:Key="VideoAnilist_Help">Nenhuma chave de API é necessária. O AniList é a alternativa especializada para anime quando o TMDB está indisponível ou não encontra uma correspondência segura, e continua disponível no seletor de artwork.</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_AutoRoutingHelp">Roteamento automático com token TMDB: filme → TMDB; série de TV → TMDB e depois TVMaze; anime → TMDB e depois AniList/TVMaze. Sem token, TVMaze e AniList continuam disponíveis automaticamente.</sys:String>
+    <sys:String x:Key="VideoOnlineArtwork_Attribution">O token TMDB é opcional para séries e animes: ele ativa o TMDB como provedor preferido. TVMaze e AniList continuam disponíveis sem chave.</sys:String>
+    <sys:String x:Key="VideoTvmaze_StatusReady">Scraper TVMaze: Pronto</sys:String>
+    <sys:String x:Key="VideoTvmaze_StatusDisabled">Scraper TVMaze: Desativado</sys:String>
+    <sys:String x:Key="VideoAnilist_StatusReady">Scraper AniList: Pronto</sys:String>
+    <sys:String x:Key="VideoAnilist_StatusDisabled">Scraper AniList: Desativado</sys:String>
+
+    <sys:String x:Key="VideoTmdb_Title">Scraper de artwork do TMDB</sys:String>
+    <sys:String x:Key="VideoTmdb_Desc">Busca automaticamente artwork de Capa, Paisagem, Papel de Parede e Logo no TMDB para filmes, séries e animes quando não há artwork local disponível.</sys:String>
+    <sys:String x:Key="VideoTmdb_Enable">Ativar scraper de artwork do TMDB</sys:String>
+    <sys:String x:Key="VideoTmdb_EnableHelp">Artwork local colocado ao lado da mídia sempre tem prioridade. O TMDB só é usado quando não há artwork local disponível.</sys:String>
+    <sys:String x:Key="VideoTmdb_Language">Idioma preferido do artwork</sys:String>
+    <sys:String x:Key="VideoTmdb_LanguageAuto">Usar idioma do Playnite</sys:String>
+    <sys:String x:Key="VideoTmdb_LanguageHelp">Artwork com texto prioriza este idioma, depois artwork sem texto, o idioma original da mídia e inglês. Papéis de parede priorizam artwork sem texto.</sys:String>
+    <sys:String x:Key="VideoTmdb_Token">TMDB API Read Access Token</sys:String>
+    <sys:String x:Key="VideoTmdb_TokenHelp">Crie gratuitamente um API Read Access Token de desenvolvedor nas configurações da sua conta TMDB. O token é armazenado localmente criptografado com o Windows DPAPI.</sys:String>
+    <sys:String x:Key="VideoTmdb_MatchingHelp">A V2 limpa nomes de releases (qualidade, codec, idioma, fonte e tags de grupo de release), extrai o ano separadamente, tenta variações inteligentes do título e pontua correspondências de título/ano antes de aceitá-las.</sys:String>
+    <sys:String x:Key="VideoTmdb_PrivacyHelp">Quando a busca for necessária, o Aniki envia ao TMDB apenas o título limpo da mídia e o ano detectado. Caminhos locais/de rede nunca são enviados ao TMDB nem armazenados em texto puro nos índices de artwork.</sys:String>
+    <sys:String x:Key="VideoTmdb_Attribution">Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</sys:String>
+    <sys:String x:Key="VideoTmdb_StatusDisabled">Scraper TMDB: Desativado</sys:String>
+    <sys:String x:Key="VideoTmdb_StatusTokenMissing">Scraper TMDB: token de API ausente</sys:String>
+    <sys:String x:Key="VideoTmdb_StatusReady">Scraper TMDB: Pronto</sys:String>
+
+    <sys:String x:Key="VideoNetwork_Title">Locais de rede</sys:String>
+    <sys:String x:Key="VideoNetwork_Desc">Configure até 4 pastas de rede que aparecerão em Locais de rede no Aniki Video Center.</sys:String>
+    <sys:String x:Key="VideoNetwork_Help">Use um caminho UNC como \\NAS\Movies ou escolha Procurar. O Windows já deve ter acesso a compartilhamentos protegidos; o Aniki Helper nunca armazena credenciais de rede.</sys:String>
+    <sys:String x:Key="VideoNetwork_Slot">Slot</sys:String>
+    <sys:String x:Key="VideoNetwork_Name">Nome</sys:String>
+    <sys:String x:Key="VideoNetwork_Path">Caminho de rede</sys:String>
+    <sys:String x:Key="VideoNetwork_Browse">Procurar</sys:String>
+    <sys:String x:Key="VideoNetwork_Clear">Limpar</sys:String>
+    <sys:String x:Key="VideoNetwork_BrowseTitle">Escolha uma pasta de rede</sys:String>
+    <sys:String x:Key="VideoThumbnail_Title">Ferramentas de mídia</sys:String>
+    <sys:String x:Key="VideoThumbnail_Desc">Configure as ferramentas externas de mídia usadas pelo Aniki Video Center para miniaturas e recursos de Próximo baseados em capítulos.</sys:String>
+    <sys:String x:Key="VideoThumbnail_Help">O FFmpeg gera miniaturas por volta de 10% de cada vídeo. O FFprobe lê nomes de capítulos para Próximo e Pular Intro/Recapitulação. Ambos os recursos usam alternativas automaticamente se uma ferramenta estiver indisponível.</sys:String>
+    <sys:String x:Key="VideoThumbnail_Browse">Procurar</sys:String>
+    <sys:String x:Key="VideoThumbnail_Clear">Limpar</sys:String>
+    <sys:String x:Key="VideoThumbnail_BrowseTitle">Escolha ffmpeg.exe</sys:String>
+    <sys:String x:Key="VideoThumbnail_FfmpegLabel">Caminho do FFmpeg — miniaturas</sys:String>
+    <sys:String x:Key="VideoFfprobe_Label">Caminho do FFprobe — detecção de capítulos</sys:String>
+    <sys:String x:Key="VideoFfprobe_Help">Normalmente o ffprobe.exe fica na mesma pasta que o ffmpeg.exe. O Aniki o detecta automaticamente quando possível, mas você pode selecionar outro arquivo manualmente.</sys:String>
+    <sys:String x:Key="VideoFfprobe_BrowseTitle">Escolha ffprobe.exe</sys:String>
+    <sys:String x:Key="VideoFfprobe_StatusReady">FFprobe: Pronto</sys:String>
+    <sys:String x:Key="VideoFfprobe_StatusAuto">FFprobe: Pronto (detectado automaticamente)</sys:String>
+    <sys:String x:Key="VideoFfprobe_StatusMissing">FFprobe: Arquivo não encontrado</sys:String>
+    <sys:String x:Key="VideoFfprobe_StatusNotConfigured">FFprobe: Não configurado</sys:String>
+    <sys:String x:Key="VideoPlayback_Title">Reprodução</sys:String>
+    <sys:String x:Key="VideoPlayback_Desc">Configure como o Aniki Video Center se comporta durante a reprodução.</sys:String>
+    <sys:String x:Key="VideoPlayback_AutoNext">Reproduzir próximo vídeo automaticamente</sys:String>
+    <sys:String x:Key="VideoPlayback_AutoNextHelp">Próximo sempre é exibido quando existe outro vídeo. Com FFprobe, pode aparecer em um capítulo detectado de créditos/final; caso contrário, usa os segundos finais. Quando a reprodução automática está ativada, um capítulo de final detectado inicia uma contagem regressiva curta antes do próximo vídeo.</sys:String>
+    <sys:String x:Key="VideoPlayback_AudioLanguage">Idioma de áudio preferido</sys:String>
+    <sys:String x:Key="VideoPlayback_AudioLanguageHelp">Escolha o idioma que o Aniki deve priorizar quando uma faixa de áudio correspondente estiver disponível.</sys:String>
+    <sys:String x:Key="VideoPlayback_SubtitleMode">Legendas</sys:String>
+    <sys:String x:Key="VideoPlayback_SubtitleDefault">Usar padrão do vídeo</sys:String>
+    <sys:String x:Key="VideoPlayback_SubtitleOff">Sempre desativadas</sys:String>
+    <sys:String x:Key="VideoPlayback_SubtitlePreferred">Idioma preferido quando disponível</sys:String>
+    <sys:String x:Key="VideoPlayback_SubtitleLanguage">Idioma de legenda preferido</sys:String>
+    <sys:String x:Key="VideoPlayback_SubtitleLanguageHelp">Usado apenas com Idioma preferido. Escolha o idioma de legenda que o Aniki deve priorizar quando uma faixa correspondente estiver disponível.</sys:String>
+    <sys:String x:Key="VideoPlayback_SubtitleUnifiedHelp">Escolha Padrão, Sempre desativadas ou um idioma de legenda preferido. Se o idioma selecionado não estiver disponível, o Aniki mantém a seleção de legenda padrão do vídeo.</sys:String>
+    <sys:String x:Key="VideoLanguage_Default">Usar padrão do vídeo</sys:String>
+    <sys:String x:Key="VideoLanguage_French">Francês</sys:String>
+    <sys:String x:Key="VideoLanguage_English">Inglês</sys:String>
+    <sys:String x:Key="VideoLanguage_Spanish">Espanhol</sys:String>
+    <sys:String x:Key="VideoLanguage_German">Alemão</sys:String>
+    <sys:String x:Key="VideoLanguage_Italian">Italiano</sys:String>
+    <sys:String x:Key="VideoLanguage_Portuguese">Português</sys:String>
+    <sys:String x:Key="VideoLanguage_Japanese">Japonês</sys:String>
+    <sys:String x:Key="VideoLanguage_Korean">Coreano</sys:String>
+    <sys:String x:Key="VideoLanguage_Chinese">Chinês</sys:String>
+    <sys:String x:Key="VideoLanguage_Russian">Russo</sys:String>
+    <sys:String x:Key="VideoLanguage_Dutch">Holandês</sys:String>
+    <sys:String x:Key="VideoLanguage_Polish">Polonês</sys:String>
+    <sys:String x:Key="VideoLanguage_Czech">Tcheco</sys:String>
+    <sys:String x:Key="VideoLanguage_Turkish">Turco</sys:String>
+    <sys:String x:Key="VideoLanguage_Bulgarian">Búlgaro</sys:String>
+    <sys:String x:Key="VideoLanguage_Arabic">Árabe</sys:String>
+    <sys:String x:Key="VideoLanguage_Hindi">Hindi</sys:String>
+    <sys:String x:Key="VideoThumbnail_ClearCache">Limpar cache</sys:String>
+    <sys:String x:Key="VideoThumbnail_StatusNotConfigured">FFmpeg: Não configurado</sys:String>
+    <sys:String x:Key="VideoThumbnail_StatusReady">FFmpeg: Pronto</sys:String>
+    <sys:String x:Key="VideoThumbnail_StatusMissing">FFmpeg: Arquivo não encontrado</sys:String>
+    <sys:String x:Key="VideoThumbnail_CacheSizeValue">Cache de miniaturas: {0}</sys:String>
+    <sys:String x:Key="VideoArtwork_CacheSizeValue">Cache de artwork: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_PreviewEmpty">Selecione um vídeo ou pasta para visualizar.</sys:String>
+    <sys:String x:Key="VideoPlayer_FindArtwork">Gerenciar artwork</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkPickerTitle">Escolher artwork</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkPickerLoading">Pesquisando provedores de artwork...</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkPickerEmpty">Nenhum artwork foi encontrado. Altere o nome da pesquisa e tente novamente.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkPickerError">Não foi possível contatar o provedor de artwork agora.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkPickerApplying">Salvando artwork...</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkPickerApplyError">Não foi possível salvar este artwork.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkSearchEmpty">Digite um título antes de pesquisar.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkSearchHelp">Se a correspondência automática estiver errada, edite o título e pesquise novamente.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkSearchButton">Pesquisar</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkEditSearch">Editar pesquisa</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkSearchLabel">Nome da pesquisa</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchTitle">Associar filme</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkWallpaper">Papel de parede</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkChangeMatch">Alterar associação</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkAssociation">Associação TMDb</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkNotIdentified">Não associado</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchLoading">Pesquisando possíveis correspondências de filmes...</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchSearchHelp">Escolha primeiro o filme correto. Depois, você poderá gerenciar Capa, Paisagem, Papel de Parede e Logo.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchChoose">Selecione o filme correto para associar a este arquivo.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchEmpty">Nenhuma correspondência de filme foi encontrada. Edite o título e pesquise novamente.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchApplying">Associando filme e atualizando metadados...</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchApplied">Filme associado. Agora você pode escolher o artwork que deseja usar.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkMatchApplyError">Não foi possível associar este filme.</sys:String>
+    <sys:String x:Key="VideoPlayer_UpNext">Próximo</sys:String>
+    <sys:String x:Key="VideoPlayer_PlayNow">Reproduzir agora</sys:String>
+    <sys:String x:Key="VideoPlayer_Cancel">Cancelar</sys:String>
+    <sys:String x:Key="VideoPlayer_UpNextCountdown">Reprodução automática em {0}s</sys:String>
+    <sys:String x:Key="VideoPlayer_UpNextManual">Pressione Reproduzir agora para continuar.</sys:String>
+    <sys:String x:Key="VideoPlayer_SkipIntro">Pular intro</sys:String>
+    <sys:String x:Key="VideoPlayer_SkipRecap">Pular recapitulação</sys:String>
+    <sys:String x:Key="VideoPlayer_Watched">Assistido</sys:String>
+    <sys:String x:Key="VideoPlayer_MarkWatched">Marcar como assistido</sys:String>
+    <sys:String x:Key="VideoPlayer_MarkUnwatched">Marcar como não assistido</sys:String>
+    <sys:String x:Key="VideoPlayer_WatchedStatus">Status de assistido</sys:String>
+    <sys:String x:Key="VideoPlayer_MarkSeriesWatched">Marcar série como assistida</sys:String>
+    <sys:String x:Key="VideoPlayer_MarkSeriesUnwatched">Marcar série como não assistida</sys:String>
+    <sys:String x:Key="VideoPlayer_MarkSeasonWatched">Marcar temporada como assistida</sys:String>
+    <sys:String x:Key="VideoPlayer_MarkSeasonUnwatched">Marcar temporada como não assistida</sys:String>
+    <sys:String x:Key="VideoPlayer_HoldMarkWatched">Segurar: assistido</sys:String>
+    <sys:String x:Key="VideoPlayer_HoldMarkUnwatched">Segurar: não assistido</sys:String>
+    <sys:String x:Key="VideoPlayer_Retry">Tentar novamente</sys:String>
+    <sys:String x:Key="VideoPlayer_NetworkConnecting">Conectando aos locais de rede...</sys:String>
+    <sys:String x:Key="VideoPlayer_PlayFromHere">Reproduzir a partir daqui</sys:String>
+        <sys:String x:Key="SettingsNav_VideoCenterTab">Video Center</sys:String>
+    <sys:String x:Key="SettingsNav_VideoCenterLibraries">Geral</sys:String>
+    <sys:String x:Key="SettingsNav_VideoCenterPlayback">Reprodução</sys:String>
+    <sys:String x:Key="SettingsNav_VideoCenterDetection">Intro e Final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_SettingsTitle">Marcadores de Intro e Final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_SettingsDesc">Busca os tempos de intro e final para filmes, séries e animes e os reutiliza durante a reprodução.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_SectionTitle">Busca automática de marcadores</sys:String>
+    <sys:String x:Key="VideoIntroEnding_SectionDesc">Novas mídias são verificadas durante as varreduras da biblioteca do Video Center usando AniSkip para animes e TheIntroDB para séries e filmes.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_ManualOnlyHelp">A busca de marcadores é leve e ocorre após uma varredura da biblioteca. Resultados em cache não são solicitados novamente, a menos que a mídia mude ou você os atualize manualmente.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_OpenManager">Abrir Gerenciador de Marcadores de Intro e Final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_FfmpegHelp">O FFmpeg não é usado na busca online de marcadores. Capítulos incorporados continuam tendo prioridade no player; marcadores online apenas preenchem tempos de intro ou final ausentes.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_WindowTitle">Aniki Video Center - Marcadores de Intro e Final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_ManagerTitle">Marcadores de Intro e Final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_ManagerDesc">Veja marcadores em cache para filmes, séries e animes. AniSkip é usado para animes; TheIntroDB para séries e filmes.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_FilterAll">Todos</sys:String>
+    <sys:String x:Key="VideoIntroEnding_FilterNotAnalyzed">Não verificados</sys:String>
+    <sys:String x:Key="VideoIntroEnding_FilterDetected">Disponíveis</sys:String>
+    <sys:String x:Key="VideoIntroEnding_FilterPartial">Parcial / indisponível</sys:String>
+    <sys:String x:Key="VideoIntroEnding_AnalyzeSelected">Atualizar selecionados</sys:String>
+    <sys:String x:Key="VideoIntroEnding_ReanalyzeSelected">Forçar atualização dos selecionados</sys:String>
+    <sys:String x:Key="VideoIntroEnding_AnalyzeAll">Atualizar marcadores ausentes</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Cancel">Cancelar</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Loading">Carregando filmes, séries e animes...</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Ready">Pronto. A busca de marcadores também é executada automaticamente após varreduras da biblioteca do Video Center.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_FfmpegMissing">A busca online de marcadores está indisponível.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_FfmpegMissingHelp">A busca online de marcadores está indisponível no momento.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_LoadError">Não foi possível carregar o gerenciador de marcadores de intro e final.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_AllCurrent">Todos os itens listados já têm resultados atuais de busca de marcadores.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Preparing">Preparando busca de marcadores...</sys:String>
+    <sys:String x:Key="VideoIntroEnding_AnalyzingEpisode">Buscando marcadores: {0} - {1}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_ExtractingEpisode">Buscando marcadores: {0} - {1}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_ExtractedEpisode">Marcadores {0}/{1}: {2}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_DetectingIntro">Buscando intro: {0} - {1}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_ExtendingIntro">Tentando fonte alternativa de marcadores: {0} - {1}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_DetectingEnding">Buscando final: {0} - {1}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_IntroLabel">Intro</sys:String>
+    <sys:String x:Key="VideoIntroEnding_EndingLabel">Final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Completed">Atualização dos marcadores de intro e final concluída.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Cancelled">Atualização de marcadores cancelada.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Failed">Falha na atualização de marcadores.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Count">{0} itens de mídia</sys:String>
+    <sys:String x:Key="VideoIntroEnding_Season">Temporada</sys:String>
+    <sys:String x:Key="VideoIntroEnding_SeasonSummary">{0} episódios  •  {1} verificados  •  Intro {2}/{0}  •  Final {3}/{0}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_SeriesSummary">{0} episódios  •  {1} verificados  •  Intro {2}  •  Final {3}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusNotAnalyzed">Não verificado</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusPartialAnalysis">Parcialmente verificado</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusDetected">Marcadores disponíveis</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusPartial">Marcadores parciais</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusNoMatch">Indisponível</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusIntroEnding">Intro + Final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusIntroOnly">Somente intro</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusEndingOnly">Somente final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_DetectedIntro">Marcador de intro</sys:String>
+    <sys:String x:Key="VideoIntroEnding_DetectedEnding">Marcador de final</sys:String>
+    <sys:String x:Key="VideoIntroEnding_NotEnoughEpisodes">Nenhuma busca de marcadores por episódio está disponível.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_NoReliableMatchNote">Ainda não há marcadores online de intro ou final disponíveis para este item.</sys:String>
+    <sys:String x:Key="SettingsNav_VideoCenterArtwork">Artwork</sys:String>
+    <sys:String x:Key="SettingsNav_VideoCenterNetwork">Rede</sys:String>
+    <sys:String x:Key="SettingsNav_VideoCenterTools">Cache e ferramentas</sys:String>
+<sys:String x:Key="SettingsNav_VideoCenter">Aniki Video Center</sys:String>
+    <sys:String x:Key="SettingsPage_VideoCenterDesc">Configure bibliotecas de mídia, reprodução, artwork, locais de rede e caches usados pelo Aniki Video Center.</sys:String>
+    <sys:String x:Key="StartupShutdownVideos_Title">Sequências de Inicialização e Encerramento</sys:String>
+    <sys:String x:Key="VideoLibraries_Title">Bibliotecas de mídia</sys:String>
+    <sys:String x:Key="VideoLibraries_Desc">Informe ao Aniki Video Center onde estão seus Filmes, Séries de TV, Animes e a categoria personalizada opcional.</sys:String>
+    <sys:String x:Key="VideoLibraries_Help">As bibliotecas enriquecem a tela Início e adicionam visualizações dedicadas de mídia. Elas são opcionais: Navegar sempre permanece disponível, e mídias sem artwork online ainda usam artwork local ou miniaturas do FFmpeg.</sys:String>
+    <sys:String x:Key="VideoLibraries_Movies">Filmes</sys:String>
+    <sys:String x:Key="VideoLibraries_Series">Séries de TV</sys:String>
+    <sys:String x:Key="VideoLibraries_Anime">Anime</sys:String>
+    <sys:String x:Key="VideoLibraries_BrowseMovies">Escolha sua pasta de Filmes</sys:String>
+    <sys:String x:Key="VideoLibraries_BrowseSeries">Escolha sua pasta de Séries de TV</sys:String>
+    <sys:String x:Key="VideoLibraries_BrowseAnime">Escolha sua pasta de Anime</sys:String>
+    <sys:String x:Key="VideoPlayer_Movies">Filmes</sys:String>
+    <sys:String x:Key="VideoPlayer_Collections">Coleções</sys:String>
+    <sys:String x:Key="VideoPlayer_CollectionMoviesSuffix">filmes</sys:String>
+    <sys:String x:Key="VideoPlayer_Series">Séries de TV</sys:String>
+    <sys:String x:Key="VideoPlayer_Anime">Anime</sys:String>
+    <sys:String x:Key="VideoPlayer_LibrarySubtitle">Sua biblioteca de mídia</sys:String>
+    <sys:String x:Key="VideoPlayer_RecentlyAdded">Adicionados recentemente</sys:String>
+    <sys:String x:Key="VideoPlayer_ViewAll">Ver todos</sys:String>
+    <sys:String x:Key="VideoPlayer_NoLibrary">Esta biblioteca não está configurada.</sys:String>
+    <sys:String x:Key="VideoPlayer_LibraryEmpty">Nenhuma mídia compatível foi encontrada nesta biblioteca.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Title">Verificação de artwork da biblioteca</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Desc">Verifica todas as bibliotecas configuradas do Video Center e busca automaticamente artwork ausente.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_SafeHelp">Artwork local existente e artwork já armazenado em cache pelo Video Center são mantidos. A verificação busca apenas artwork ausente e nunca substitui uma escolha existente.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Start">Buscar artwork ausente</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Cancel">Cancelar</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Preparing">Verificando bibliotecas...</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Progress">Verificando artwork... {0}/{1}</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Counters">Encontrados: {0}   Existentes: {1}   Sem correspondência: {2}   Falhas: {3}</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Completed">Verificação de artwork concluída.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Cancelled">Verificação de artwork cancelada.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Error">A verificação de artwork não pôde ser concluída.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_NoLibraries">Configure pelo menos uma biblioteca do Video Center antes de iniciar uma verificação.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_Result">{0} mídias verificadas. {1} artworks encontrados, {2} já disponíveis, {3} sem correspondência, {4} falharam.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_UnavailableLibraries">Bibliotecas indisponíveis: {0}.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_UnmatchedTitle">Mídias sem correspondência:</sys:String>
+    <sys:String x:Key="VideoLibraryManager_WindowTitle">Aniki Video Center - Biblioteca</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Menu">Biblioteca do Video Center</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Title">Biblioteca do Video Center</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Description">Gerencie sua biblioteca do Video Center, artwork e mídias indisponíveis pelo Playnite Desktop.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_SearchHint">Pesquisar na biblioteca do Video Center</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterAll">Todos</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterMovies">Filmes</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterSeries">Séries de TV</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterAnime">Anime</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterMissing">Artwork ausente</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterUnavailable">Indisponível</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Refresh">Atualizar</sys:String>
+    <sys:String x:Key="VideoLibraryManager_NoArtwork">Sem artwork</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Empty">Nenhuma mídia corresponde a este filtro.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Details">Detalhes</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Path">Caminho</sys:String>
+    <sys:String x:Key="VideoLibraryManager_SearchArtwork">Pesquisar artwork</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Cover">Capa</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Landscape">Paisagem</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Hero">Papel de parede</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Change">Alterar</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkComplete3">Capa + paisagem + papel de parede</sys:String>
+    <sys:String x:Key="VideoLibraryManager_OpenFolder">Abrir pasta</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Unavailable">Indisponível</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkComplete">Capa + papel de parede</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkPosterOnly">Somente capa</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MissingArtwork">Artwork ausente</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Loading">Carregando biblioteca...</sys:String>
+    <sys:String x:Key="VideoLibraryManager_LoadError">Não foi possível carregar a biblioteca do Video Center.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Count">{0} mídias</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkWindowTitle">Escolher artwork</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkError">Não foi possível abrir a pesquisa de artwork.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_PathUnavailable">Este local está indisponível no momento.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Search">Pesquisar</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Apply">Aplicar</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Cancel">Cancelar</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkApplyHelp">Apenas o slot de artwork selecionado é substituído. Capa, Paisagem, Papel de Parede e Logo podem ser gerenciados independentemente.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_SearchingArtwork">Pesquisando provedores de artwork...</sys:String>
+    <sys:String x:Key="VideoLibraryManager_NoArtworkResults">Nenhum resultado de artwork correspondeu a esta pesquisa.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkSearchFailed">Falha na pesquisa de artwork.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ApplyingArtwork">Aplicando artwork...</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkApplyFailed">Não foi possível aplicar o artwork.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_OpenFromSettings">Abrir Biblioteca do Video Center</sys:String>
+    <sys:String x:Key="SettingsGeneral_Title">Geral</sys:String>
+    <sys:String x:Key="SettingsGeneral_DesktopSidebarShortcut">Mostrar o atalho das configurações do Aniki Helper na barra lateral esquerda do Playnite (modo Desktop)</sys:String>
+    <sys:String x:Key="SettingsGeneral_DesktopSidebarShortcutDesc">Adiciona um ícone do Aniki Helper à barra lateral esquerda do Playnite Desktop. Selecioná-lo abre diretamente as configurações do plugin. Este atalho nunca é exibido no modo Fullscreen.</sys:String>
+    <sys:String x:Key="SettingsNav_Desktop">Desktop</sys:String>
+    <sys:String x:Key="SettingsPage_DesktopDesc">Configure recursos do Aniki Helper que se integram ao Playnite Desktop.</sys:String>
+    <sys:String x:Key="SettingsDesktop_IntegrationTitle">Integração com Playnite Desktop</sys:String>
+
+    <sys:String x:Key="VideoLibraries_Options">Opções da biblioteca</sys:String>
+    <sys:String x:Key="VideoLibraries_DisplayName">Nome de exibição</sys:String>
+    <sys:String x:Key="VideoLibraries_DisplayNameHelp">Nome usado para esta fonte nas trilhas de navegação e rótulos de fonte do Fullscreen.</sys:String>
+    <sys:String x:Key="VideoLibraries_IncludeHome">Mostrar no Início</sys:String>
+    <sys:String x:Key="VideoLibraries_IncludeRecentlyAdded">Incluir em Adicionados recentemente</sys:String>
+    <sys:String x:Key="VideoLibraries_OnlineArtwork">Permitir artwork online</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterProblems">Problemas</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterUnwatched">Não assistidos</sys:String>
+    <sys:String x:Key="VideoLibraryManager_EditMetadata">Editar metadados</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MarkWatched">Marcar como assistido</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MarkUnwatched">Marcar como não assistido</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ProblemsShort">problemas</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MissingPosterBackdrop">Capa + papel de parede ausentes</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MissingPoster">Capa ausente</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MissingBackdrop">Papel de parede ausente</sys:String>
+    <sys:String x:Key="VideoMetadata_Title">Título</sys:String>
+    <sys:String x:Key="VideoMetadata_Year">Ano</sys:String>
+    <sys:String x:Key="VideoMetadata_Type">Tipo</sys:String>
+    <sys:String x:Key="VideoMetadata_Movie">Filme</sys:String>
+    <sys:String x:Key="VideoMetadata_Series">Série de TV</sys:String>
+    <sys:String x:Key="VideoMetadata_Anime">Anime</sys:String>
+    <sys:String x:Key="VideoMetadata_Genres">Gêneros</sys:String>
+    <sys:String x:Key="VideoMetadata_Rating">Avaliação</sys:String>
+    <sys:String x:Key="VideoMetadata_Overview">Sinopse</sys:String>
+    <sys:String x:Key="VideoMetadata_Save">Salvar</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Refreshing">Atualizando...</sys:String>
+    <sys:String x:Key="VideoLibraryManager_ArtworkSection">Artwork</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MetadataSection">Metadados</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterMissingCover">Capa ausente</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterMissingLandscape">Paisagem ausente</sys:String>
+    <sys:String x:Key="VideoLibraryManager_FilterMissingHero">Papel de parede ausente</sys:String>
+    <sys:String x:Key="VideoLibraryManager_MissingAssets">Ausente: {0}</sys:String>
+    <sys:String x:Key="VideoArtworkScan_ProgressAssets">Verificando {0}/{1}  •  Capa +{2}  •  Paisagem +{3}  •  Papel de parede +{4}  •  Logo +{5}</sys:String>
+    <sys:String x:Key="VideoArtworkScan_ResultAssets">{0} mídias verificadas. +{1} capas, +{2} paisagens, +{3} papéis de parede, +{4} logos. {5} completas, {6} incompletas, {7} falharam.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_CountersAssets">Capa +{0}   Paisagem +{1}   Papel de parede +{2}   Logo +{3}   Completas: {4}   Incompletas: {5}</sys:String>
+    <sys:String x:Key="VideoArtworkScan_WindowHelp">O progresso e o cancelamento são exibidos em uma janela dedicada de progresso do Playnite.</sys:String>
+    <sys:String x:Key="VideoArtworkScan_ProgressWindow">Verificando artwork... {0}/{1}  •  Capa +{2}  •  Paisagem +{3}  •  Papel de parede +{4}  •  Logo +{5}{6}</sys:String>
+    <sys:String x:Key="VideoThumbnail_GenerateMissing">Gerar miniaturas ausentes</sys:String>
+    <sys:String x:Key="VideoThumbnail_GeneratePreparing">Procurando vídeos que precisam de miniaturas...</sys:String>
+    <sys:String x:Key="VideoThumbnail_GenerateProgress">Gerando miniaturas... {0}/{1}  •  +{2} criadas  •  {3} existentes  •  {4} falharam{5}</sys:String>
+    <sys:String x:Key="VideoThumbnail_GenerateCompleted">Geração de miniaturas concluída.</sys:String>
+    <sys:String x:Key="VideoThumbnail_GenerateCancelled">Geração de miniaturas cancelada.</sys:String>
+    <sys:String x:Key="VideoThumbnail_GenerateError">Falha na geração de miniaturas.</sys:String>
+    <sys:String x:Key="VideoThumbnail_GenerateNeedsFfmpeg">Configure um caminho válido do FFmpeg antes de gerar miniaturas.</sys:String>
+    <sys:String x:Key="VideoThumbnail_GenerateResult">{0} vídeos verificados. {1} miniaturas criadas, {2} já disponíveis, {3} falharam.</sys:String>
+    <sys:String x:Key="VideoLibraryManager_Logo">Logo</sys:String>
+    <sys:String x:Key="VideoPlayer_Continue">Continuar</sys:String>
+    <sys:String x:Key="VideoPlayer_Play">Reproduzir</sys:String>
+    <sys:String x:Key="VideoPlayer_MarkFavorite">Marcar como favorito</sys:String>
+    <sys:String x:Key="VideoPlayer_RemoveFavoriteMedia">Remover favorito</sys:String>
+    <sys:String x:Key="VideoPlayer_FileInfo">Informações do arquivo</sys:String>
+    <sys:String x:Key="VideoPlayer_Artwork">Artwork</sys:String>
+    <sys:String x:Key="VideoPlayer_MediaDetails">Detalhes da mídia</sys:String>
+    <sys:String x:Key="VideoPlayer_CastCrew">Elenco e Equipe</sys:String>
+    <sys:String x:Key="VideoPlayer_FileInfoTitle">Informações do arquivo</sys:String>
+    <sys:String x:Key="VideoPlayer_FileInfoName">Arquivo: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_FileInfoFormat">Contêiner: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_FileInfoQuality">Qualidade: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_FileInfoProgress">Posição de reprodução: {0}</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkManagerTitle">Artwork e Associação</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkCurrent">Artwork atual</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkCurrentAutomatic">Automático</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkCurrentManual">Seleção manual</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkCurrentLocal">Arquivo local</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkCurrentBadge">ATUAL</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkChooseLocal">Escolher arquivo local</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkResetAutomatic">Redefinir para automático</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkApplied">Aplicado</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkIdentifyTitle">Identificar mídia</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkIdentifyHelp">Selecione o filme correto. Esta associação será reutilizada em todo o Video Center.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkLocalError">Não foi possível abrir esta imagem.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkResetting">Restaurando artwork automático...</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkResetDone">Artwork automático restaurado.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkResetError">Não foi possível restaurar o artwork automático.</sys:String>
+
+    <sys:String x:Key="VideoPlayer_CustomLibrary">Personalizado</sys:String>
+    <sys:String x:Key="VideoPlayer_Favorites">Favoritos</sys:String>
+    <sys:String x:Key="VideoPlayer_AllFavorites">Todos os favoritos</sys:String>
+    <sys:String x:Key="VideoPlayer_NoFavorites">Ainda não há mídias favoritas.</sys:String>
+    <sys:String x:Key="VideoPlayer_LibraryTools">Ferramentas da biblioteca</sys:String>
+    <sys:String x:Key="VideoPlayer_LibraryToolsSubtitle">Mantenha miniaturas, artwork e índices da biblioteca sem sair do Fullscreen.</sys:String>
+    <sys:String x:Key="VideoPlayer_ScanMissingThumbnails">Verificar miniaturas ausentes</sys:String>
+    <sys:String x:Key="VideoPlayer_ScanMissingThumbnailsHelp">FFmpeg · somente miniaturas ausentes</sys:String>
+    <sys:String x:Key="VideoPlayer_ScanMissingArtwork">Verificar artwork ausente</sys:String>
+    <sys:String x:Key="VideoPlayer_ScanMissingArtworkHelp">Capa · Paisagem · Papel de parede · Logo</sys:String>
+    <sys:String x:Key="VideoPlayer_RefreshLibraries">Atualizar bibliotecas</sys:String>
+    <sys:String x:Key="VideoPlayer_RefreshLibrariesHelp">Atualizar Início e índices da biblioteca</sys:String>
+    <sys:String x:Key="VideoPlayer_CancelScan">Cancelar verificação</sys:String>
+    <sys:String x:Key="VideoPlayer_LibraryToolsReady">Escolha uma tarefa de manutenção. As verificações apenas preenchem recursos ausentes e nunca substituem uma escolha de artwork existente.</sys:String>
+    <sys:String x:Key="VideoPlayer_ScanCancelled">Verificação cancelada.</sys:String>
+    <sys:String x:Key="VideoPlayer_ThumbnailScanProgress">{0}/{1} · Geradas {2} · Existentes {3} · Falhas {4}</sys:String>
+    <sys:String x:Key="VideoPlayer_ScanComplete">Concluído</sys:String>
+    <sys:String x:Key="VideoPlayer_ThumbnailScanDone">Geradas {0} · Existentes {1} · Falhas {2}</sys:String>
+    <sys:String x:Key="VideoPlayer_ScanFailed">Falha na verificação.</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkScanProgress">{0}/{1} · Capa +{2} · Paisagem +{3} · Papel de parede +{4} · Logo +{5}</sys:String>
+    <sys:String x:Key="VideoPlayer_ArtworkScanDone">Capa +{0} · Paisagem +{1} · Papel de parede +{2} · Logo +{3} · Sem correspondência {4}</sys:String>
+    <sys:String x:Key="VideoPlayer_RefreshLibrariesStarted">Bibliotecas atualizadas. A tela Início está sendo atualizada em segundo plano.</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomIntro">Biblioteca de mídia extra (opcional)</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomName">Nome exibido no Video Center</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomType">Exibir e associar como</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomHelp">Adicione uma biblioteca nomeada extra quando as três categorias padrão não forem suficientes. Desative-a a qualquer momento para removê-la do Video Center.</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomFolders">Pastas</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomEnable">Ativar biblioteca extra</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomNameHelp">Escolha o rótulo que deseja ver, por exemplo Documentários, Desenhos ou Shows.</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomTypeHelp">Escolha qual comportamento existente de detalhes/associação de Filme, Série de TV ou Anime esta biblioteca deve reutilizar.</sys:String>
+    <sys:String x:Key="VideoLibraries_CustomExample">Exemplo: “Filmes de Mangá” + Filmes cria uma linha Filmes de Mangá que usa a visualização de detalhes de Filme e a associação de filmes do TMDb.</sys:String>
+    <sys:String x:Key="VideoLibraries_BrowseCustom">Escolha uma pasta para esta categoria personalizada</sys:String>
+
+    <sys:String x:Key="VideoPlayer_RefreshLibrariesProgress">Atualizando índices da biblioteca... {0}/{1}</sys:String>
+    <sys:String x:Key="VideoPlayer_RefreshLibrariesDone">Bibliotecas atualizadas. {0} atualizadas, {1} falharam.</sys:String>
+    <sys:String x:Key="VideoLibraries_AddMoviesFolder">Adicionar outra pasta de Filmes</sys:String>
+    <sys:String x:Key="VideoLibraries_AddSeriesFolder">Adicionar outra pasta de Séries de TV</sys:String>
+    <sys:String x:Key="VideoLibraries_AddAnimeFolder">Adicionar outra pasta de Anime</sys:String>
+    <sys:String x:Key="VideoLibraries_AddCustomFolder">Adicionar outra pasta a esta categoria personalizada</sys:String>
+
+    <sys:String x:Key="VideoIntroEnding_Movie">Filme</sys:String>
+    <sys:String x:Key="VideoIntroEnding_MovieSummary">Verificado {0}/{1}  •  Intro {2}  •  Final {3}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_MovieItemSummary">{0} arquivo  •  {1} verificado  •  Intro {2}  •  Final {3}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_RefreshingEpisode">Buscando marcadores {0}/{1}: {2}</sys:String>
+    <sys:String x:Key="VideoIntroEnding_MissingIdentity">Aguardando um ID de mídia compatível.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_MissingEpisodeNumber">Não foi possível determinar o número da temporada/episódio.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_RateLimited">Limite de requisições do serviço de marcadores atingido. O Aniki tentará novamente mais tarde.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_NoOnlineMarkers">Ainda não há marcadores online de intro/final disponíveis para este item.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_LookupError">Não foi possível concluir a busca de marcadores.</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusLookupError">Falha na busca</sys:String>
+    <sys:String x:Key="VideoIntroEnding_StatusMissingId">Aguardando metadados</sys:String>
+    <sys:String x:Key="VideoArtworkScan_MarkersAutoHelp">Marcadores de intro e final são buscados automaticamente durante as varreduras da biblioteca do Video Center quando disponíveis. Animes usam AniSkip; séries e filmes usam TheIntroDB. Capítulos incorporados continuam tendo prioridade no player.</sys:String>
+    <sys:String x:Key="VideoPlayer_Sort">Ordenar</sys:String>
+    <sys:String x:Key="VideoPlayer_SortLibrary">Ordenar biblioteca</sys:String>
+    <sys:String x:Key="VideoPlayer_SortLibrarySubtitle">Escolha como esta biblioteca será ordenada. Nenhuma nova varredura é feita.</sys:String>
+    <sys:String x:Key="VideoPlayer_SortTitleAsc">Título A → Z</sys:String>
+    <sys:String x:Key="VideoPlayer_SortTitleDesc">Título Z → A</sys:String>
+    <sys:String x:Key="VideoPlayer_SortReleaseDesc">Data de lançamento — mais recentes</sys:String>
+    <sys:String x:Key="VideoPlayer_SortReleaseAsc">Data de lançamento — mais antigos</sys:String>
+    <sys:String x:Key="VideoPlayer_SortAddedDesc">Data de adição — mais recentes</sys:String>
+    <sys:String x:Key="VideoPlayer_SortAddedAsc">Data de adição — mais antigos</sys:String>
+    <sys:String x:Key="VideoPlayer_SortUnwatched">Não assistidos primeiro</sys:String>
+    <sys:String x:Key="VideoPlayer_SortWatched">Assistidos primeiro</sys:String>
+    <sys:String x:Key="VideoPlayer_SortCollectionCountDesc">Mais filmes</sys:String>
+    <sys:String x:Key="VideoPlayer_SortCollectionCountAsc">Menos filmes</sys:String>
+</ResourceDictionary>

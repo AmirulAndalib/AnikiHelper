@@ -106,7 +106,7 @@ namespace AnikiHelper.Services.MediaGallery
 
                     if (!string.Equals(item.CoverPath ?? string.Empty, currentCoverPath, StringComparison.OrdinalIgnoreCase))
                     {
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             $"[AnikiHelper][MediaGallery] Cover refreshed | Game={currentGameName} | " +
                             $"Old={item.CoverPath ?? string.Empty} | New={currentCoverPath}");
 
@@ -122,7 +122,7 @@ namespace AnikiHelper.Services.MediaGallery
 
                     if (string.IsNullOrWhiteSpace(currentCoverPath))
                     {
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             $"[AnikiHelper][MediaGallery] No valid cover/background/icon found | " +
                             $"Game={currentGameName} | GameId={item.GameId}");
                     }

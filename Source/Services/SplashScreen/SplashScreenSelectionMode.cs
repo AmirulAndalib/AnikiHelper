@@ -1,4 +1,4 @@
-namespace AnikiHelper.Services.SplashScreen
+﻿namespace AnikiHelper.Services.SplashScreen
 {
     public enum SplashScreenSelectionMode
     {

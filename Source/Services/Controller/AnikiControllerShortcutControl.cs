@@ -25,7 +25,7 @@ namespace AnikiHelper.Services.Controller
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -40,7 +40,7 @@ namespace AnikiHelper.Services.Controller
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -54,6 +54,7 @@ namespace AnikiHelper.Services.Controller
         private readonly AnikiControllerInput controller;
 
         private bool isControlActive;
+        private bool buttonDownSubscribed;
 
         private static readonly object ActiveControlsLock = new object();
 
@@ -114,13 +115,14 @@ namespace AnikiHelper.Services.Controller
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
 
-            AnikiControllerInput.ButtonDown += OnButtonDown;
+            SubscribeControllerInput();
 
             TryRegisterFocusWatchers();
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            SubscribeControllerInput();
             TryWatchParentTag();
             UpdateOverrideProcessing();
         }
@@ -128,7 +130,29 @@ namespace AnikiHelper.Services.Controller
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
             SetControlActive(false);
+            UnsubscribeControllerInput();
+        }
+
+        private void SubscribeControllerInput()
+        {
+            if (buttonDownSubscribed)
+            {
+                return;
+            }
+
+            AnikiControllerInput.ButtonDown += OnButtonDown;
+            buttonDownSubscribed = true;
+        }
+
+        private void UnsubscribeControllerInput()
+        {
+            if (!buttonDownSubscribed)
+            {
+                return;
+            }
+
             AnikiControllerInput.ButtonDown -= OnButtonDown;
+            buttonDownSubscribed = false;
         }
 
         private void TryWatchParentTag()
@@ -347,13 +371,8 @@ namespace AnikiHelper.Services.Controller
                     }
                 }
 
-                // Playnite native virtual keyboard uses its own controller bindings.
-                // When it is opened from the main fullscreen view/search box, Aniki shortcuts
-                // must not steal Start/Back/Y/X/etc. Otherwise Start opens Quick Access instead
-                // of validating the keyboard with the native DONE action.
-                //
-                // Keep the old SettingsWindow protection: in Settings, Start/Back stay blocked
-                // to avoid reopening/leaving Quick Access stuck above the settings window.
+                // Let Playnite's virtual keyboard own controller buttons while it is open.
+                // Keep the existing Settings-window shortcut guard.
                 if (IsPlayniteTextInputWindowOpen() && !IsSettingsWindowOpen())
                 {
                     controller.DefaultProcess(button.ToString(), true);

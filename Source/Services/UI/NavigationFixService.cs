@@ -17,7 +17,8 @@ namespace AnikiHelper.Services.UI
         private readonly Func<bool> isWelcomeHubOpen;
         private readonly Func<int> getHubCurrentPage;
         private readonly Action<int> setHubCurrentPage;
-        private readonly Func<bool> isHubAppsPageVisible;
+        private readonly Func<int> getHubMaxPage;
+        private readonly Func<int, string> getHubPageScopeName;
         private bool started;
 
         // Cache named visual elements per window/root. A full visual-tree scan is done
@@ -39,13 +40,15 @@ namespace AnikiHelper.Services.UI
             Func<bool> isWelcomeHubOpen,
             Func<int> getHubCurrentPage = null,
             Action<int> setHubCurrentPage = null,
-            Func<bool> isHubAppsPageVisible = null)
+            Func<int> getHubMaxPage = null,
+            Func<int, string> getHubPageScopeName = null)
         {
             this.api = api;
             this.isWelcomeHubOpen = isWelcomeHubOpen;
             this.getHubCurrentPage = getHubCurrentPage;
             this.setHubCurrentPage = setHubCurrentPage;
-            this.isHubAppsPageVisible = isHubAppsPageVisible;
+            this.getHubMaxPage = getHubMaxPage;
+            this.getHubPageScopeName = getHubPageScopeName;
         }
 
         public void Start()
@@ -120,7 +123,7 @@ namespace AnikiHelper.Services.UI
 
                 var focused = Keyboard.FocusedElement;
 
-                // Important: the Steam Store can be opened above the Hub while HubRoot
+                // The Steam Store can be opened above the Hub while HubRoot
                 // is still visible behind it. Handle the Store first, otherwise the Hub
                 // navigation branch eats the key and Store focus fixes never run.
                 if (HandleSteamStoreNavigation(e, root, focused))
@@ -162,11 +165,7 @@ namespace AnikiHelper.Services.UI
             var itemsList = FindCachedVisualChildByName<ListBox>(overlay, "StoreItemsList");
             var storeListHasFocus = IsFocusInsideStoreItems(itemsList, focusedElement);
 
-            // Strong Store comfort fix:
-            // WPF spatial navigation can jump from the right-most card to the last top tab
-            // (Upcoming) because it is geometrically the closest element above. Force the
-            // intended path for every store card: tabs -> hero -> list, and block Down from
-            // the horizontal list because there is no useful target below it.
+            // Force Store focus order: tabs -> hero -> list.
             if (storeListHasFocus)
             {
                 if (e.Key == Key.Up)
@@ -294,6 +293,20 @@ namespace AnikiHelper.Services.UI
                     return;
                 }
 
+                // Direct-to-Library startup can leave focus on the top bar. WPF's default
+                // spatial navigation then focuses the ListBox itself on the first Down press
+                // and only reaches a game item on the second press. Move directly to the
+                // selected/first game so the first controller input behaves like Hub -> Library.
+                if (e.Key == Key.Down && list?.IsVisible == true)
+                {
+                    if (FocusSelectedOrFirstListItem(list))
+                    {
+                        e.Handled = true;
+                    }
+
+                    return;
+                }
+
                 if (e.Key == Key.Left)
                 {
                     FocusPreviousFocusableInContainer(topBar, focused);
@@ -341,6 +354,21 @@ namespace AnikiHelper.Services.UI
 
             if (list == null)
             {
+                return;
+            }
+
+            // Safety net for startup/focus restoration cases where WPF has focused the
+            // ListBox container but not one of its game items yet. Consume the first
+            // directional input by placing focus on the current game instead of requiring
+            // a second controller press.
+            if (ReferenceEquals(focused, list) &&
+                (e.Key == Key.Down || e.Key == Key.Right || e.Key == Key.Left))
+            {
+                if (FocusSelectedOrFirstListItem(list))
+                {
+                    e.Handled = true;
+                }
+
                 return;
             }
 
@@ -477,8 +505,8 @@ namespace AnikiHelper.Services.UI
                 return false;
             }
 
-            var currentPage = Math.Max(1, Math.Min(10, getHubCurrentPage()));
-            var nextPage = Math.Max(1, Math.Min(10, currentPage + direction));
+            var currentPage = ClampHubPage(getHubCurrentPage());
+            var nextPage = ClampHubPage(currentPage + direction);
 
             if (nextPage == currentPage)
             {
@@ -596,8 +624,8 @@ namespace AnikiHelper.Services.UI
             // changing pages instead of trapping controller navigation on the empty page.
             if (focusedElement == null || !IsDescendantOf(focusedElement, pageScope))
             {
-                var currentPageWithoutFocus = Math.Max(1, Math.Min(10, getHubCurrentPage()));
-                var nextPageWithoutFocus = Math.Max(1, Math.Min(10, currentPageWithoutFocus + direction));
+                var currentPageWithoutFocus = ClampHubPage(getHubCurrentPage());
+                var nextPageWithoutFocus = ClampHubPage(currentPageWithoutFocus + direction);
 
                 if (nextPageWithoutFocus == currentPageWithoutFocus)
                 {
@@ -614,8 +642,8 @@ namespace AnikiHelper.Services.UI
                 return true;
             }
 
-            var currentPage = Math.Max(1, Math.Min(10, getHubCurrentPage()));
-            var nextPage = Math.Max(1, Math.Min(10, currentPage + direction));
+            var currentPage = ClampHubPage(getHubCurrentPage());
+            var nextPage = ClampHubPage(currentPage + direction);
 
             if (nextPage == currentPage)
             {
@@ -628,44 +656,40 @@ namespace AnikiHelper.Services.UI
             return true;
         }
 
+        private int GetHubMaxPage()
+        {
+            try
+            {
+                return Math.Max(1, getHubMaxPage != null ? getHubMaxPage() : 10);
+            }
+            catch
+            {
+                return 10;
+            }
+        }
+
+        private int ClampHubPage(int page)
+        {
+            return Math.Max(1, Math.Min(GetHubMaxPage(), page));
+        }
+
         private FrameworkElement GetCurrentHubPageScope(DependencyObject root)
         {
-            var page = getHubCurrentPage != null ? Math.Max(1, Math.Min(10, getHubCurrentPage())) : 1;
-            var appsPageVisible = isHubAppsPageVisible != null && isHubAppsPageVisible();
-            var name = "HubTopSection";
+            var page = getHubCurrentPage != null ? ClampHubPage(getHubCurrentPage()) : 1;
+            string name = null;
 
-            switch (page)
+            try
             {
-                case 1:
-                    name = "HubTopSection";
-                    break;
-                case 2:
-                    name = "HubThirdSection";
-                    break;
-                case 3:
-                    name = appsPageVisible ? "HubAppsSection" : "HubLibraryRecommendedSection";
-                    break;
-                case 4:
-                    name = appsPageVisible ? "HubLibraryRecommendedSection" : "HubFriendActivitySection";
-                    break;
-                case 5:
-                    name = appsPageVisible ? "HubFriendActivitySection" : "HubLatestCapturesSection";
-                    break;
-                case 6:
-                    name = appsPageVisible ? "HubLatestCapturesSection" : "HubAchievementMemoriesSection";
-                    break;
-                case 7:
-                    name = appsPageVisible ? "HubAchievementMemoriesSection" : "HubForYouStoreSection";
-                    break;
-                case 8:
-                    name = appsPageVisible ? "HubForYouStoreSection" : "HubStoreSection";
-                    break;
-                case 9:
-                    name = appsPageVisible ? "HubStoreSection" : "HubUpcomingSection";
-                    break;
-                case 10:
-                    name = "HubUpcomingSection";
-                    break;
+                name = getHubPageScopeName?.Invoke(page);
+            }
+            catch
+            {
+                name = null;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = page == 1 ? "HubTopSection" : "HubThirdSection";
             }
 
             return FindCachedVisualChildByName<FrameworkElement>(root, name);
@@ -702,8 +726,8 @@ namespace AnikiHelper.Services.UI
             // Page vraiment absente / collapsed : on la saute.
             if (pageScope == null || pageScope.IsVisible != true)
             {
-                var currentPage = Math.Max(1, Math.Min(10, getHubCurrentPage()));
-                var nextPage = Math.Max(1, Math.Min(10, currentPage + direction));
+                var currentPage = ClampHubPage(getHubCurrentPage());
+                var nextPage = ClampHubPage(currentPage + direction);
 
                 if (nextPage == currentPage)
                 {
@@ -1029,6 +1053,61 @@ namespace AnikiHelper.Services.UI
             }
 
             return result;
+        }
+
+        private static bool FocusSelectedOrFirstListItem(ListBox list)
+        {
+            if (list == null || !list.IsVisible || !list.IsEnabled || list.Items.Count == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                object targetItem = list.SelectedItem;
+
+                if (targetItem == null && list.Items.Count > 0)
+                {
+                    targetItem = list.Items[0];
+                }
+
+                if (targetItem != null)
+                {
+                    // The selected container can still be unrealized during the very first
+                    // Fullscreen layout pass. Scroll/update once so virtualization can create it.
+                    list.ScrollIntoView(targetItem);
+                    list.UpdateLayout();
+
+                    var container = list.ItemContainerGenerator.ContainerFromItem(targetItem) as ListBoxItem;
+                    if (container != null &&
+                        container.IsVisible &&
+                        container.IsEnabled &&
+                        container.Focusable)
+                    {
+                        container.BringIntoView();
+                        container.Focus();
+                        Keyboard.Focus(container);
+
+                        var itemFocusScope = FocusManager.GetFocusScope(container);
+                        FocusManager.SetFocusedElement(itemFocusScope, container);
+
+                        return container.IsKeyboardFocusWithin || ReferenceEquals(Keyboard.FocusedElement, container);
+                    }
+                }
+
+                // Fallback keeps the same behavior used by the existing Hub -> Library path.
+                list.Focus();
+                Keyboard.Focus(list);
+
+                var listFocusScope = FocusManager.GetFocusScope(list);
+                FocusManager.SetFocusedElement(listFocusScope, list);
+
+                return list.IsKeyboardFocusWithin;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool FocusElement(FrameworkElement element)

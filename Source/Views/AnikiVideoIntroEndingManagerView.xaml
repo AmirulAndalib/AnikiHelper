@@ -1,0 +1,257 @@
+﻿<UserControl x:Class="AnikiHelper.AnikiVideoIntroEndingManagerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vc="clr-namespace:AnikiHelper.Services.VideoPlayer"
+             MinWidth="900" MinHeight="560">
+    <UserControl.Resources>
+        <Style x:Key="DetectionButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource NormalBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="MinHeight" Value="34"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource GlyphBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Border" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DetectionTextBox" TargetType="TextBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource NormalBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="18" Background="{DynamicResource WindowBackgourndBrush}" TextElement.Foreground="{DynamicResource TextBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="190"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="{DynamicResource VideoIntroEnding_ManagerTitle}"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="24" FontWeight="SemiBold"/>
+                <TextBlock Text="{DynamicResource VideoIntroEnding_ManagerDesc}"
+                           Foreground="{DynamicResource TextBrush}"
+                           Opacity="0.72" Margin="0,5,20,0" TextWrapping="Wrap"/>
+            </StackPanel>
+            <TextBox x:Name="SearchBox" Grid.Column="1"
+                     Style="{StaticResource DetectionTextBox}"
+                     VerticalAlignment="Bottom"
+                     TextChanged="SearchBox_TextChanged"/>
+            <ComboBox x:Name="FilterCombo" Grid.Column="3"
+                      VerticalAlignment="Bottom" MinHeight="32"
+                      SelectionChanged="FilterCombo_SelectionChanged"
+                      SelectedIndex="0">
+                <ComboBoxItem Tag="all" Content="{DynamicResource VideoIntroEnding_FilterAll}"/>
+                <ComboBoxItem Tag="not" Content="{DynamicResource VideoIntroEnding_FilterNotAnalyzed}"/>
+                <ComboBoxItem Tag="detected" Content="{DynamicResource VideoIntroEnding_FilterDetected}"/>
+                <ComboBoxItem Tag="partial" Content="{DynamicResource VideoIntroEnding_FilterPartial}"/>
+            </ComboBox>
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="390"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{DynamicResource ButtonBackgroundBrush}"
+                    BorderBrush="{DynamicResource NormalBorderBrush}"
+                    BorderThickness="1" CornerRadius="5">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ListBox x:Name="SeriesList"
+                             ItemsSource="{Binding FilteredItems}"
+                             SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                             SelectionChanged="SeriesList_SelectionChanged"
+                             BorderThickness="0" Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vc:AnikiVideoIntroEndingSeriesItem}">
+                                <Grid Margin="5" MinHeight="82">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="122"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" CornerRadius="4" ClipToBounds="True"
+                                            Background="{DynamicResource ButtonBackgroundBrush}">
+                                        <Image Source="{Binding ArtworkPath}" Stretch="UniformToFill"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextBrush}"
+                                                   FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding TypeLabel}" Foreground="{DynamicResource TextBrush}"
+                                                   Opacity="0.60" Margin="0,3,0,0"/>
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextBrush}"
+                                                   Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Grid.Row="1" x:Name="CountText"
+                               Foreground="{DynamicResource TextBrush}" Opacity="0.65"
+                               Margin="10,8"/>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="2"
+                    Background="{DynamicResource ButtonBackgroundBrush}"
+                    BorderBrush="{DynamicResource NormalBorderBrush}"
+                    BorderThickness="1" CornerRadius="5" Padding="18">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="10"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding SelectedItem.Name}"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   FontSize="22" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding SelectedItem.DetailText}"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   Opacity="0.70" Margin="0,5,0,0"/>
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding SelectedItem.Seasons}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vc:AnikiVideoIntroEndingSeasonItem}">
+                                    <Border BorderBrush="{DynamicResource NormalBorderBrush}"
+                                            BorderThickness="1" CornerRadius="4"
+                                            Margin="0,0,0,10" Padding="14,11">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Foreground="{DynamicResource TextBrush}"
+                                                               FontSize="15" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="{Binding DetailText}"
+                                                               Foreground="{DynamicResource TextBrush}"
+                                                               Opacity="0.68" Margin="0,4,20,0"
+                                                               TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding StatusText}"
+                                                           Foreground="{DynamicResource TextBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+
+                                            <ItemsControl ItemsSource="{Binding Episodes}" Margin="0,10,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type vc:AnikiVideoIntroEndingEpisodeItem}">
+                                                        <Grid Margin="0,2">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="62"/>
+                                                                <ColumnDefinition Width="38"/>
+                                                                <ColumnDefinition Width="110"/>
+                                                                <ColumnDefinition Width="45"/>
+                                                                <ColumnDefinition Width="75"/>
+                                                                <ColumnDefinition Width="92"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding EpisodeCode}"
+                                                                       Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold"/>
+                                                            <TextBlock Grid.Column="1" Text="{DynamicResource VideoIntroEnding_IntroLabel}"
+                                                                       Foreground="{DynamicResource TextBrush}" Opacity="0.55"/>
+                                                            <TextBlock Grid.Column="2" Text="{Binding IntroTimeText}"
+                                                                       Foreground="{DynamicResource TextBrush}"/>
+                                                            <TextBlock Grid.Column="3" Text="{DynamicResource VideoIntroEnding_EndingLabel}"
+                                                                       Foreground="{DynamicResource TextBrush}" Opacity="0.55"/>
+                                                            <TextBlock Grid.Column="4" Text="{Binding EndingTimeText}"
+                                                                       Foreground="{DynamicResource TextBrush}"/>
+                                                            <TextBlock Grid.Column="5" Text="{Binding SourceText}"
+                                                                       Foreground="{DynamicResource TextBrush}" Opacity="0.72"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Grid.Column="6" Text="{Binding StatusText}"
+                                                                       Foreground="{DynamicResource TextBrush}" Opacity="0.55"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock x:Name="ProgressText" Foreground="{DynamicResource TextBrush}" Opacity="0.72"/>
+                <ProgressBar x:Name="AnalysisProgress" Height="5" Margin="0,6,18,0"
+                             Minimum="0" Maximum="1" Value="0" Visibility="Collapsed"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="AnalyzeSelectedButton" Style="{StaticResource DetectionButton}"
+                        Content="{DynamicResource VideoIntroEnding_AnalyzeSelected}"
+                        Click="AnalyzeSelected_Click" Margin="0,0,8,0"/>
+                <Button x:Name="ReanalyzeSelectedButton" Style="{StaticResource DetectionButton}"
+                        Content="{DynamicResource VideoIntroEnding_ReanalyzeSelected}"
+                        Click="ReanalyzeSelected_Click" Margin="0,0,8,0"/>
+                <Button x:Name="AnalyzeAllButton" Style="{StaticResource DetectionButton}"
+                        Content="{DynamicResource VideoIntroEnding_AnalyzeAll}"
+                        Click="AnalyzeAll_Click" Margin="0,0,8,0"/>
+                <Button x:Name="CancelButton" Style="{StaticResource DetectionButton}"
+                        Content="{DynamicResource VideoIntroEnding_Cancel}"
+                        Click="Cancel_Click" IsEnabled="False"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

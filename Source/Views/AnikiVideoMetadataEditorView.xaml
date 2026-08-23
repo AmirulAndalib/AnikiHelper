@@ -1,0 +1,115 @@
+﻿<UserControl x:Class="AnikiHelper.AnikiVideoMetadataEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <UserControl.Resources>
+        <Style x:Key="MetadataTextBox" TargetType="TextBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource NormalBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+        </Style>
+        <Style x:Key="MetadataButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource NormalBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource HoverBrush}"/><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource GlyphBrush}"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource GlyphBrush}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MetadataComboBoxItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverBrush}"/></Trigger>
+                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource NormalBrush}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MetadataComboBox" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource NormalBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource MetadataComboBoxItem}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="ComboBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                                <Grid><ContentPresenter Margin="8,0,30,0" VerticalAlignment="Center" Content="{TemplateBinding SelectionBoxItem}"/><ToggleButton HorizontalAlignment="Right" Width="28" Focusable="False" Background="Transparent" BorderThickness="0" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"><TextBlock Text="▼" Foreground="{DynamicResource TextBrush}" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/></ToggleButton></Grid>
+                            </Border>
+                            <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True"><Border MinWidth="{TemplateBinding ActualWidth}" Background="{DynamicResource PopupBackgroundBrush}" BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1"><ScrollViewer><ItemsPresenter/></ScrollViewer></Border></Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Grid Margin="20" Background="{DynamicResource WindowBackgourndBrush}" TextElement.Foreground="{DynamicResource TextBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Margin="0,0,0,18">
+            <TextBlock Text="{DynamicResource VideoLibraryManager_EditMetadata}" FontSize="24" FontWeight="SemiBold"/>
+            <TextBlock x:Name="TargetPathText" Opacity="0.58" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="{DynamicResource VideoMetadata_Title}" VerticalAlignment="Center" Margin="0,0,12,10"/>
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Style="{StaticResource MetadataTextBox}" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="1" Text="{DynamicResource VideoMetadata_Year}" VerticalAlignment="Center" Margin="0,0,12,10"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="YearBox" Style="{StaticResource MetadataTextBox}" Width="120" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="2" Text="{DynamicResource VideoMetadata_Type}" VerticalAlignment="Center" Margin="0,0,12,10"/>
+                <ComboBox Grid.Row="2" Grid.Column="1" x:Name="TypeCombo" Style="{StaticResource MetadataComboBox}" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectedValuePath="Tag">
+                    <ComboBoxItem Tag="movies" Content="{DynamicResource VideoMetadata_Movie}"/>
+                    <ComboBoxItem Tag="series" Content="{DynamicResource VideoMetadata_Series}"/>
+                    <ComboBoxItem Tag="anime" Content="{DynamicResource VideoMetadata_Anime}"/>
+                </ComboBox>
+                <TextBlock Grid.Row="3" Text="{DynamicResource VideoMetadata_Genres}" VerticalAlignment="Center" Margin="0,0,12,10"/>
+                <TextBox Grid.Row="3" Grid.Column="1" x:Name="GenresBox" Style="{StaticResource MetadataTextBox}" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="4" Text="{DynamicResource VideoMetadata_Rating}" VerticalAlignment="Center" Margin="0,0,12,10"/>
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="RatingBox" Style="{StaticResource MetadataTextBox}" Width="120" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="5" Text="{DynamicResource VideoMetadata_Overview}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                <TextBox Grid.Row="5" Grid.Column="1" x:Name="OverviewBox" Style="{StaticResource MetadataTextBox}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" VerticalScrollBarVisibility="Auto"/>
+            </Grid>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Style="{StaticResource MetadataButton}" Content="{DynamicResource VideoMetadata_Save}" MinWidth="110" Click="Save_Click"/>
+            <Button Style="{StaticResource MetadataButton}" Content="{DynamicResource VideoLibraryManager_Cancel}" MinWidth="100" Margin="8,0,0,0" Click="Cancel_Click"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

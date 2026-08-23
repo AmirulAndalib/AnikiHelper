@@ -18,7 +18,7 @@ namespace AnikiHelper.Services.SplashScreen
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -33,7 +33,7 @@ namespace AnikiHelper.Services.SplashScreen
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -48,6 +48,27 @@ namespace AnikiHelper.Services.SplashScreen
         private const int GameReadyStableCheckCount = 3;
         private const int GameReadyStableCheckDelayMs = 500;
         private const int HardSafetyExtraMs = 2000;
+
+        public sealed class GameReadyCandidate
+        {
+            public int ProcessId { get; private set; }
+            public IntPtr WindowHandle { get; private set; }
+            public string Source { get; private set; }
+
+            public GameReadyCandidate(int processId, IntPtr windowHandle, string source)
+            {
+                ProcessId = processId;
+                WindowHandle = windowHandle;
+                Source = source ?? string.Empty;
+            }
+
+            public bool HasSameIdentity(GameReadyCandidate other)
+            {
+                return other != null &&
+                       ProcessId == other.ProcessId &&
+                       WindowHandle == other.WindowHandle;
+            }
+        }
 
         private GameLaunchSplashWindow currentSplashWindow;
         private DateTime? currentSplashShownAt;
@@ -77,7 +98,7 @@ namespace AnikiHelper.Services.SplashScreen
             }
         }
 
-        public void Show(Game game, string backgroundPath, string fallbackBackgroundPath, bool showLogo, SplashScreenLogoPosition logoPosition, bool videoSoundEnabled, SplashScreenVideoEndBehavior videoEndBehavior, double videoVolume)
+        public void Show(Game game, string backgroundPath, string fallbackBackgroundPath, bool showLogo, SplashScreenLogoPosition logoPosition, bool videoSoundEnabled, SplashScreenVideoEndBehavior videoEndBehavior, double videoVolume, double backgroundDimming)
         {
             try
             {
@@ -93,7 +114,8 @@ namespace AnikiHelper.Services.SplashScreen
                         logoPosition,
                         videoSoundEnabled,
                         videoEndBehavior,
-                        videoVolume);
+                        videoVolume,
+                        backgroundDimming);
 
                     currentSplashShownAt = null;
 
@@ -119,13 +141,15 @@ namespace AnikiHelper.Services.SplashScreen
             }
         }
 
-        public void StartLaunchFailureSafety(int minimumDurationMs)
+        public void StartLaunchFailureSafety(int safetyDurationMs)
         {
             try
             {
                 CancelLaunchFailureSafety();
 
-                var delayMs = Math.Max(500, minimumDurationMs) + HardSafetyExtraMs;
+                // This timer covers the period before Playnite reports GameStarted.
+                // Keep it independent from the longer Game Ready hard safety.
+                var delayMs = Math.Max(500, safetyDurationMs);
                 var cts = new CancellationTokenSource();
                 launchFailureSafetyCts = cts;
 
@@ -184,7 +208,7 @@ namespace AnikiHelper.Services.SplashScreen
             await CloseAfterGameStartedAsync(minimumDurationMs, maximumWaitMs, null, false);
         }
 
-        public async Task CloseAfterGameStartedAsync(int minimumDurationMs, int maximumWaitMs, Func<bool> isGameReady, bool autoDetectGameReady)
+        public async Task CloseAfterGameStartedAsync(int minimumDurationMs, int maximumWaitMs, Func<GameReadyCandidate> getGameReadyCandidate, bool autoDetectGameReady)
         {
             try
             {
@@ -194,8 +218,8 @@ namespace AnikiHelper.Services.SplashScreen
                 var normalizedMaximumWait = Math.Max(0, maximumWaitMs);
                 var hardSafetyDelay = remainingMinimumDelay + normalizedMaximumWait + HardSafetyExtraMs;
 
-                var normalCloseTask = autoDetectGameReady && isGameReady != null
-                    ? CloseAfterMinimumAndGameReadyAsync(remainingMinimumDelay, normalizedMaximumWait, isGameReady)
+                var normalCloseTask = autoDetectGameReady && getGameReadyCandidate != null
+                    ? CloseAfterMinimumAndGameReadyAsync(remainingMinimumDelay, normalizedMaximumWait, getGameReadyCandidate)
                     : CloseAfterMinimumAndFocusLossAsync(remainingMinimumDelay, normalizedMaximumWait);
 
                 var hardSafetyTask = Task.Delay(hardSafetyDelay);
@@ -218,7 +242,7 @@ namespace AnikiHelper.Services.SplashScreen
             }
         }
 
-        private async Task CloseAfterMinimumAndGameReadyAsync(int remainingMinimumDelay, int maximumWaitMs, Func<bool> isGameReady)
+        private async Task CloseAfterMinimumAndGameReadyAsync(int remainingMinimumDelay, int maximumWaitMs, Func<GameReadyCandidate> getGameReadyCandidate)
         {
             if (remainingMinimumDelay > 0)
             {
@@ -229,23 +253,33 @@ namespace AnikiHelper.Services.SplashScreen
 
             while (waitedAfterMinimum <= maximumWaitMs)
             {
-                if (IsGameReadySafe(isGameReady))
+                var initialCandidate = GetGameReadyCandidateSafe(getGameReadyCandidate);
+                if (initialCandidate != null)
                 {
                     var isStable = true;
-
                     for (var stableCheckIndex = 0; stableCheckIndex < GameReadyStableCheckCount; stableCheckIndex++)
                     {
                         await Task.Delay(GameReadyStableCheckDelayMs);
 
-                        if (!IsGameReadySafe(isGameReady))
+                        var currentCandidate = GetGameReadyCandidateSafe(getGameReadyCandidate);
+                        if (!initialCandidate.HasSameIdentity(currentCandidate))
                         {
                             isStable = false;
+                            DebugLog(
+                                $"[AnikiHelper] Game ready candidate changed during stability check. " +
+                                $"InitialPid={initialCandidate.ProcessId}, InitialHandle=0x{initialCandidate.WindowHandle.ToInt64():X}, " +
+                                $"CurrentPid={(currentCandidate == null ? 0 : currentCandidate.ProcessId)}, " +
+                                $"CurrentHandle=0x{(currentCandidate == null ? 0L : currentCandidate.WindowHandle.ToInt64()):X}.");
                             break;
                         }
                     }
 
                     if (isStable)
                     {
+                        DebugLog(
+                            $"[AnikiHelper] Game ready candidate confirmed. " +
+                            $"Source={initialCandidate.Source}, ProcessId={initialCandidate.ProcessId}, " +
+                            $"Handle=0x{initialCandidate.WindowHandle.ToInt64():X}.");
                         Close();
                         return;
                     }
@@ -261,16 +295,16 @@ namespace AnikiHelper.Services.SplashScreen
             Close();
         }
 
-        private bool IsGameReadySafe(Func<bool> isGameReady)
+        private GameReadyCandidate GetGameReadyCandidateSafe(Func<GameReadyCandidate> getGameReadyCandidate)
         {
             try
             {
-                return isGameReady?.Invoke() == true;
+                return getGameReadyCandidate?.Invoke();
             }
             catch (Exception ex)
             {
                 DebugLog(ex, "[AnikiHelper] Game ready detection callback failed.");
-                return false;
+                return null;
             }
         }
 

@@ -222,6 +222,9 @@ namespace AnikiHelper.Services.AnikiThemeSettings
 
         public bool AutoDisableWhenDependencyMissing { get; set; } = true;
 
+        [DontSerialize]
+        public string DependencyMessage { get; set; }
+
         public AnikiThemeSlider Slider { get; set; }
 
         private bool isEnabled = true;

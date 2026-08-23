@@ -24,7 +24,7 @@ namespace AnikiHelper.Services
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -39,7 +39,7 @@ namespace AnikiHelper.Services
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(exception, message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, exception, message);
                 }
             }
             catch
@@ -495,7 +495,7 @@ namespace AnikiHelper.Services
                 DebugLog($"[Steam Recommender] explicit adult filter OK | kept={candidates.Count} | dropped=0");
             }
 
-            // Important: connected Steam Recommender is already personalized by Steam.
+            // Connected Steam Recommender results are already personalized by Steam.
             // Do not blacklist VR or specific game names.
             // We only remove items already owned/played/in library, obvious non-game content,
             // explicit adult/NSFW content, then reorder Steam's own candidates by popularity.
@@ -1046,13 +1046,7 @@ namespace AnikiHelper.Services
 
             foreach (var item in list)
             {
-                // Never guess wishlist membership from nearby HTML.
-                //
-                // null  = the real wishlist could not be loaded:
-                //         do not display any Wishlist badge.
-                //
-                // empty = the real wishlist was loaded successfully
-                //         and contains no games.
+                // null = wishlist unavailable; empty = loaded and contains no games.
                 item.IsInWishlist =
                     wishlistAppIds != null &&
                     wishlistAppIds.Contains(item.AppId);

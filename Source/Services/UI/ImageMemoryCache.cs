@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,11 +6,7 @@ using System.Windows.Media.Imaging;
 
 namespace AnikiHelper.Services.UI
 {
-    /// <summary>
-    /// Small bounded in-memory cache for decoded WPF images.
-    /// Entries are invalidated automatically when a local source file changes.
-    /// The cache is process-local and is released when Playnite closes.
-    /// </summary>
+    /// <summary>Bounded in-memory cache for decoded WPF images.</summary>
     internal static class ImageMemoryCache
     {
         private const int MaximumEntryCount = 32;

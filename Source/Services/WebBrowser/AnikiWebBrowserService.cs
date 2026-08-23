@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -44,11 +45,7 @@ namespace AnikiHelper.Services.WebBrowser
         Web
     }
 
-    /// <summary>
-    /// Controller-friendly WebView2 browser with a native favorites home screen.
-    /// The home screen supports both normal controller focus navigation and the
-    /// same right-stick mouse cursor used inside web pages.
-    /// </summary>
+    /// <summary>Controller-friendly WebView2 browser with a native favorites home screen.</summary>
     internal sealed class AnikiWebBrowserService : IDisposable
     {
         private const int MinimumWidth = 900;
@@ -57,6 +54,8 @@ namespace AnikiHelper.Services.WebBrowser
         private const int DiscreteActionCooldownMs = 180;
         private const int HomeStickThreshold = 18000;
         private const int HomePointerThreshold = 6500;
+        private const int FooterAutoHideDelayMs = 3000;
+        private const int FooterActivityThrottleMs = 120;
 
         private const string ControllerCompatibilityScript = @"
 (() => {
@@ -96,6 +95,35 @@ namespace AnikiHelper.Services.WebBrowser
     document.addEventListener('DOMContentLoaded', ensureCursorStyle, { once: true });
 })();";
 
+        private const string UserActivityScript = @"
+(() => {
+    if (window.__anikiUserActivityInstalled) {
+        return;
+    }
+
+    window.__anikiUserActivityInstalled = true;
+    let lastNotification = 0;
+
+    const notifyActivity = () => {
+        const now = Date.now();
+        if (now - lastNotification < 150) {
+            return;
+        }
+
+        lastNotification = now;
+        try {
+            window.chrome.webview.postMessage('aniki-web-activity');
+        } catch (_) { }
+    };
+
+    window.addEventListener('pointermove', notifyActivity, true);
+    window.addEventListener('pointerdown', notifyActivity, true);
+    window.addEventListener('wheel', notifyActivity, { capture: true, passive: true });
+    window.addEventListener('scroll', notifyActivity, { capture: true, passive: true });
+    window.addEventListener('keydown', notifyActivity, true);
+    window.addEventListener('touchstart', notifyActivity, { capture: true, passive: true });
+})();";
+
         private readonly IPlayniteAPI api;
         private readonly ILogger logger;
         private readonly Action openVirtualKeyboard;
@@ -106,21 +134,26 @@ namespace AnikiHelper.Services.WebBrowser
         private Window windowHost;
         private Grid browserArea;
         private AnikiWebBrowserHomeView homeView;
-        private WebView2 webView;
+        private WebView2CompositionControl webView;
         private TextBlock loadingText;
         private StackPanel footerLegendPanel;
         private TextBlock footerStatusText;
+        private Border footerContainer;
+        private RowDefinition footerRow;
+        private DispatcherTimer footerAutoHideTimer;
         private CoreWebView2Environment environment;
 
         private string pendingAddress = string.Empty;
         private string requestedTitle = string.Empty;
         private volatile bool browserWindowActive;
+        private int controllerFocusRecoveryQueued;
         private bool initializing;
         private bool closing;
         private bool disposed;
         private bool pointerSessionActive;
         private int sessionGeneration;
         private DateTime lastDiscreteActionUtc = DateTime.MinValue;
+        private DateTime lastFooterActivityUtc = DateTime.MinValue;
         private int lastHomeStickDirection;
         private bool homePointerMode;
         private AnikiWebBrowserViewMode viewMode = AnikiWebBrowserViewMode.Home;
@@ -153,7 +186,11 @@ namespace AnikiHelper.Services.WebBrowser
 
         public bool IsControllerInputActive
         {
-            get { return IsOpen && browserWindowActive; }
+            // Keep controller ownership for the whole lifetime of the visible browser
+            // window. A temporary WPF Deactivated event (for example while the Aniki
+            // keyboard owns focus) must not hand controller input back to Playnite,
+            // otherwise the browser can become impossible to recover with a gamepad.
+            get { return IsOpen && !closing; }
         }
 
         public void OpenHome()
@@ -202,8 +239,42 @@ namespace AnikiHelper.Services.WebBrowser
                 return;
             }
 
+            // First controller input restores browser focus; close still works as a failsafe.
+            if (!browserWindowActive)
+            {
+                pointerController.SuspendInput();
+                ResetHomeStickState();
+
+                if (state.ClosePressed)
+                {
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
+                        "[AnikiHelper][WebBrowser][ControllerRecovery] Close accepted while browser window is inactive.");
+                    InvokeOnUi(CloseCore);
+                    return;
+                }
+
+                if (HasControllerFocusRecoveryRequest(state))
+                {
+                    QueueControllerFocusRecovery();
+                }
+
+                return;
+            }
+
+            // Restore native pointer state after keyboard/WebView focus handoffs.
+            if (pointerSessionActive && pointerController.ResumeInputIfSuspended())
+            {
+                global::AnikiHelper.AnikiLog.Debug(logger, 
+                    $"[AnikiHelper][WebBrowser][Pointer] Suspended pointer input automatically resumed | HostActive={windowHost?.IsActive == true}, BrowserActiveFlag={browserWindowActive}, Mode={viewMode}.");
+            }
+
             if (viewMode == AnikiWebBrowserViewMode.Web)
             {
+                if (HasWebUserActivity(state))
+                {
+                    NotifyFooterActivity();
+                }
+
                 pointerController.ProcessInput(state);
             }
             else
@@ -292,6 +363,70 @@ namespace AnikiHelper.Services.WebBrowser
             }
         }
 
+        private static bool HasControllerFocusRecoveryRequest(WebBrowserGamepadInputState state)
+        {
+            // Deliberate buttons only. Do not recover focus from analog-stick movement so
+            // normal stick drift cannot unexpectedly steal focus back from another window.
+            return state.LeftClick ||
+                   state.ActivatePressed ||
+                   state.BackPressed ||
+                   state.ClosePressed ||
+                   state.KeyboardPressed ||
+                   state.AddressPressed ||
+                   state.EnterPressed ||
+                   state.PreviousPressed ||
+                   state.NextPressed ||
+                   state.DPadUpPressed ||
+                   state.DPadDownPressed ||
+                   state.DPadLeftPressed ||
+                   state.DPadRightPressed;
+        }
+
+        private void QueueControllerFocusRecovery()
+        {
+            if (Interlocked.CompareExchange(ref controllerFocusRecoveryQueued, 1, 0) != 0)
+            {
+                return;
+            }
+
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                "[AnikiHelper][WebBrowser][ControllerRecovery] Controller input received while browser window is inactive; focus recovery queued.");
+
+            try
+            {
+                InvokeOnUi(delegate
+                {
+                    try
+                    {
+                        var host = windowHost;
+                        if (host == null || !host.IsVisible || closing)
+                        {
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
+                                "[AnikiHelper][WebBrowser][ControllerRecovery] Focus recovery cancelled because the browser is no longer available.");
+                            return;
+                        }
+
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
+                            $"[AnikiHelper][WebBrowser][ControllerRecovery] Focus recovery executing | HostActive={host.IsActive}, BrowserActiveFlag={browserWindowActive}, Mode={viewMode}.");
+
+                        BringBrowserToForeground();
+
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
+                            $"[AnikiHelper][WebBrowser][ControllerRecovery] Focus recovery completed | HostActive={host.IsActive}, BrowserActiveFlag={browserWindowActive}, Mode={viewMode}.");
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref controllerFocusRecoveryQueued, 0);
+                    }
+                });
+            }
+            catch
+            {
+                Interlocked.Exchange(ref controllerFocusRecoveryQueued, 0);
+                throw;
+            }
+        }
+
         private bool TryAcceptDiscreteAction(WebBrowserGamepadInputState state)
         {
             if (!state.ActivatePressed &&
@@ -313,6 +448,37 @@ namespace AnikiHelper.Services.WebBrowser
 
             lastDiscreteActionUtc = now;
             return true;
+        }
+
+        private static bool HasWebUserActivity(WebBrowserGamepadInputState state)
+        {
+            return Math.Abs((int)state.RightX) > HomePointerThreshold ||
+                   Math.Abs((int)state.RightY) > HomePointerThreshold ||
+                   Math.Abs((int)state.LeftY) > HomePointerThreshold ||
+                   state.LeftClick ||
+                   state.ActivatePressed ||
+                   state.ClosePressed ||
+                   state.KeyboardPressed ||
+                   state.AddressPressed ||
+                   state.EnterPressed ||
+                   state.PreviousPressed ||
+                   state.NextPressed ||
+                   state.DPadUpPressed ||
+                   state.DPadDownPressed ||
+                   state.DPadLeftPressed ||
+                   state.DPadRightPressed;
+        }
+
+        private void NotifyFooterActivity()
+        {
+            var now = DateTime.UtcNow;
+            if ((now - lastFooterActivityUtc).TotalMilliseconds < FooterActivityThrottleMs)
+            {
+                return;
+            }
+
+            lastFooterActivityUtc = now;
+            InvokeOnUi(RegisterFooterActivityCore);
         }
 
         private static bool HasHomePointerMovement(WebBrowserGamepadInputState state)
@@ -504,6 +670,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             UpdateFooterForMode();
+            ShowFooterPermanentlyCore();
             UpdateWindowTitle();
 
             Application.Current?.Dispatcher?.BeginInvoke(
@@ -540,6 +707,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             UpdateFooterForMode();
+            RegisterFooterActivityCore();
             UpdateWindowTitle();
 
             if (webView?.CoreWebView2 != null)
@@ -567,7 +735,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
         }
 
-        private async void RunInitialization(int generation, Window expectedHost, WebView2 expectedView)
+        private async void RunInitialization(int generation, Window expectedHost, WebView2CompositionControl expectedView)
         {
             try
             {
@@ -606,7 +774,7 @@ namespace AnikiHelper.Services.WebBrowser
         private async Task InitializeWebViewAsync(
             int generation,
             Window expectedHost,
-            WebView2 expectedView)
+            WebView2CompositionControl expectedView)
         {
             Directory.CreateDirectory(userDataFolder);
 
@@ -636,6 +804,8 @@ namespace AnikiHelper.Services.WebBrowser
             ConfigureCoreWebView(expectedView.CoreWebView2);
             await expectedView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
                 ControllerCompatibilityScript);
+            await expectedView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+                UserActivityScript);
 
             if (!IsCurrentSession(generation, expectedHost, expectedView))
             {
@@ -649,6 +819,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             expectedView.Visibility = Visibility.Visible;
+            expectedView.IsHitTestVisible = true;
 
             if (viewMode == AnikiWebBrowserViewMode.Web && IsAllowedAddress(pendingAddress))
             {
@@ -731,8 +902,13 @@ namespace AnikiHelper.Services.WebBrowser
 
             var view = CreateWebViewControl();
 
-            browserArea.Children.Add(loadingText);
+            // WebView2CompositionControl must be visible when its parent enters the
+            // visual tree so EnsureCoreWebView2Async can initialize reliably.
+            // Keep the loading message above it instead of collapsing the WebView.
             browserArea.Children.Add(view);
+            Panel.SetZIndex(view, 0);
+            browserArea.Children.Add(loadingText);
+            Panel.SetZIndex(loadingText, 10);
 
             var mainArea = new Grid
             {
@@ -746,14 +922,15 @@ namespace AnikiHelper.Services.WebBrowser
                 Background = Brushes.Black
             };
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(FooterHeight) });
+            footerRow = new RowDefinition { Height = new GridLength(FooterHeight) };
+            root.RowDefinitions.Add(footerRow);
 
             Grid.SetRow(mainArea, 0);
             root.Children.Add(mainArea);
 
-            var footer = CreateFooter();
-            Grid.SetRow(footer, 1);
-            root.Children.Add(footer);
+            footerContainer = CreateFooter();
+            Grid.SetRow(footerContainer, 1);
+            root.Children.Add(footerContainer);
 
             host.Content = root;
 
@@ -763,6 +940,12 @@ namespace AnikiHelper.Services.WebBrowser
             host.LocationChanged += WindowHost_LocationChanged;
             host.SizeChanged += WindowHost_SizeChanged;
             host.PreviewKeyDown += WindowHost_PreviewKeyDown;
+
+            footerAutoHideTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(FooterAutoHideDelayMs)
+            };
+            footerAutoHideTimer.Tick += FooterAutoHideTimer_Tick;
 
             windowHost = host;
             webView = view;
@@ -775,14 +958,21 @@ namespace AnikiHelper.Services.WebBrowser
             UpdateFooterForMode();
         }
 
-        private WebView2 CreateWebViewControl()
+        private WebView2CompositionControl CreateWebViewControl()
         {
-            return new WebView2
+            return new WebView2CompositionControl
             {
-                Visibility = Visibility.Collapsed,
+                // The parent browserArea is collapsed while Home is shown. The
+                // composition control itself must remain Visible so it can load and
+                // initialize as soon as browserArea becomes visible.
+                Visibility = Visibility.Visible,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
-                Focusable = true
+                // Prevent the default white WebView surface from flashing between
+                // navigations or before the next page has produced its first frame.
+                DefaultBackgroundColor = System.Drawing.Color.Black,
+                Focusable = true,
+                IsHitTestVisible = false
             };
         }
 
@@ -800,15 +990,11 @@ namespace AnikiHelper.Services.WebBrowser
             sessionGeneration++;
             initializing = false;
 
-            var oldCore = oldView.CoreWebView2;
-            UnconfigureCoreWebView(oldCore);
-
-            try { oldCore?.Stop(); } catch { }
-            try { browserArea.Children.Remove(oldView); } catch { }
-            try { oldView.Dispose(); } catch { }
+            DisposeWebViewControl(oldView, browserArea);
 
             var replacement = CreateWebViewControl();
             browserArea.Children.Add(replacement);
+            Panel.SetZIndex(replacement, 0);
             webView = replacement;
 
             if (loadingText != null)
@@ -817,7 +1003,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
         }
 
-        private FrameworkElement CreateFooter()
+        private Border CreateFooter()
         {
             var footerGrid = new Grid
             {
@@ -879,6 +1065,51 @@ namespace AnikiHelper.Services.WebBrowser
                 BorderThickness = new Thickness(0, 1, 0, 0),
                 Child = footerGrid
             };
+        }
+
+        private void RegisterFooterActivityCore()
+        {
+            if (viewMode != AnikiWebBrowserViewMode.Web || windowHost == null)
+            {
+                return;
+            }
+
+            SetFooterVisibleCore(true);
+            footerAutoHideTimer?.Stop();
+            footerAutoHideTimer?.Start();
+        }
+
+        private void ShowFooterPermanentlyCore()
+        {
+            footerAutoHideTimer?.Stop();
+            SetFooterVisibleCore(true);
+        }
+
+        private void FooterAutoHideTimer_Tick(object sender, EventArgs e)
+        {
+            footerAutoHideTimer?.Stop();
+
+            if (viewMode == AnikiWebBrowserViewMode.Web && browserWindowActive)
+            {
+                SetFooterVisibleCore(false);
+            }
+        }
+
+        private void SetFooterVisibleCore(bool visible)
+        {
+            if (footerContainer == null || footerRow == null)
+            {
+                return;
+            }
+
+            footerContainer.Visibility = visible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            footerRow.Height = visible
+                ? new GridLength(FooterHeight)
+                : new GridLength(0);
+
+            pointerController.SetBottomInset(visible ? FooterHeight : 0);
         }
 
         private void UpdateFooterForMode()
@@ -1022,6 +1253,9 @@ namespace AnikiHelper.Services.WebBrowser
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsZoomControlEnabled = true;
+            core.Settings.IsGeneralAutofillEnabled = true;
+            core.Settings.IsPasswordAutosaveEnabled = false;
+            core.Settings.AreHostObjectsAllowed = false;
 
             core.NavigationStarting += Core_NavigationStarting;
             core.NavigationCompleted += Core_NavigationCompleted;
@@ -1032,6 +1266,7 @@ namespace AnikiHelper.Services.WebBrowser
             core.DownloadStarting += Core_DownloadStarting;
             core.ProcessFailed += Core_ProcessFailed;
             core.WindowCloseRequested += Core_WindowCloseRequested;
+            core.WebMessageReceived += Core_WebMessageReceived;
         }
 
         private void UnconfigureCoreWebView(CoreWebView2 core)
@@ -1050,6 +1285,27 @@ namespace AnikiHelper.Services.WebBrowser
             try { core.DownloadStarting -= Core_DownloadStarting; } catch { }
             try { core.ProcessFailed -= Core_ProcessFailed; } catch { }
             try { core.WindowCloseRequested -= Core_WindowCloseRequested; } catch { }
+            try { core.WebMessageReceived -= Core_WebMessageReceived; } catch { }
+        }
+
+        private void DisposeWebViewControl(WebView2CompositionControl view, Panel parent)
+        {
+            if (view == null)
+            {
+                return;
+            }
+
+            var core = view.CoreWebView2;
+            UnconfigureCoreWebView(core);
+
+            // Make the page quiet and ask WebView2 to shed memory before releasing it.
+            // Dispose() then releases the CoreWebView2 controller and its COM resources.
+            try { core.IsMuted = true; } catch { }
+            try { core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low; } catch { }
+            try { core.Stop(); } catch { }
+            try { view.Visibility = Visibility.Collapsed; } catch { }
+            try { parent?.Children.Remove(view); } catch { }
+            try { view.Dispose(); } catch { }
         }
 
         private void OpenSearchOrAddressFromHome(string input)
@@ -1142,7 +1398,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Enter key injection failed.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Enter key injection failed.");
             }
         }
 
@@ -1154,7 +1410,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Refresh failed.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Refresh failed.");
             }
         }
 
@@ -1171,7 +1427,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Back navigation failed.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Back navigation failed.");
             }
 
             ShowHomeCore(true);
@@ -1189,7 +1445,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Forward navigation failed.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Forward navigation failed.");
             }
         }
 
@@ -1201,6 +1457,8 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             pointerController.SuspendInput();
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                $"[AnikiHelper][WebBrowser][Keyboard] Web keyboard requested | HostActive={windowHost?.IsActive == true}, BrowserActiveFlag={browserWindowActive}. Pointer input suspended until browser input routing resumes.");
 
             try
             {
@@ -1219,6 +1477,9 @@ namespace AnikiHelper.Services.WebBrowser
             {
                 return;
             }
+
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                $"[AnikiHelper][WebBrowser][Keyboard] Home keyboard requested | HostActive={windowHost?.IsActive == true}, BrowserActiveFlag={browserWindowActive}.");
 
             try
             {
@@ -1307,7 +1568,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Window close failed.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Window close failed.");
                 CleanupCore(host, view);
                 return;
             }
@@ -1330,6 +1591,9 @@ namespace AnikiHelper.Services.WebBrowser
         private void WindowHost_Activated(object sender, EventArgs e)
         {
             browserWindowActive = true;
+            Interlocked.Exchange(ref controllerFocusRecoveryQueued, 0);
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                $"[AnikiHelper][WebBrowser][Focus] Activated | Visible={IsOpen}, HostActive={windowHost?.IsActive == true}, Mode={viewMode}, WebViewFocusWithin={webView?.IsKeyboardFocusWithin == true}.");
 
             if (pointerSessionActive)
             {
@@ -1338,6 +1602,7 @@ namespace AnikiHelper.Services.WebBrowser
 
             if (viewMode == AnikiWebBrowserViewMode.Web)
             {
+                RegisterFooterActivityCore();
                 try { webView?.Focus(); } catch { }
             }
             else if (!homePointerMode)
@@ -1352,6 +1617,8 @@ namespace AnikiHelper.Services.WebBrowser
         {
             browserWindowActive = false;
             pointerController.SuspendInput();
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                $"[AnikiHelper][WebBrowser][Focus] Deactivated | Visible={IsOpen}, HostActive={windowHost?.IsActive == true}, Mode={viewMode}, WebViewFocusWithin={webView?.IsKeyboardFocusWithin == true}. Controller ownership retained while the browser remains visible.");
         }
 
         private void WindowHost_LocationChanged(object sender, EventArgs e)
@@ -1392,6 +1659,28 @@ namespace AnikiHelper.Services.WebBrowser
             }
         }
 
+        private void Core_WebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            if (viewMode != AnikiWebBrowserViewMode.Web)
+            {
+                return;
+            }
+
+            try
+            {
+                if (string.Equals(
+                    e.TryGetWebMessageAsString(),
+                    "aniki-web-activity",
+                    StringComparison.Ordinal))
+                {
+                    RegisterFooterActivityCore();
+                }
+            }
+            catch
+            {
+            }
+        }
+
         private void Core_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
         {
             if (IsAllowedAddress(e.Uri) || IsAllowedInternalAddress(e.Uri))
@@ -1405,7 +1694,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             e.Cancel = true;
-            logger?.Debug("[AnikiHelper][WebBrowser] Blocked navigation protocol: " + (e.Uri ?? string.Empty));
+            global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][WebBrowser] Blocked navigation protocol: " + (e.Uri ?? string.Empty));
             SetFooterStatus(Loc("WebBrowser_BlockedProtocol", "Blocked unsupported link"));
         }
 
@@ -1416,6 +1705,9 @@ namespace AnikiHelper.Services.WebBrowser
                 return;
             }
 
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                $"[AnikiHelper][WebBrowser][Navigation] Completed | Success={e.IsSuccess}, HostActive={windowHost?.IsActive == true}, BrowserActiveFlag={browserWindowActive}, Visible={IsOpen}, Address='{SafeGetCurrentAddress()}'.");
+
             if (e.IsSuccess)
             {
                 SetFooterStatus(GetDisplayHost(SafeGetCurrentAddress()));
@@ -1423,7 +1715,7 @@ namespace AnikiHelper.Services.WebBrowser
             else
             {
                 SetFooterStatus(Loc("WebBrowser_LoadFailed", "Page failed to load"));
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     "[AnikiHelper][WebBrowser] Navigation failed. Error=" + e.WebErrorStatus);
             }
 
@@ -1471,7 +1763,7 @@ namespace AnikiHelper.Services.WebBrowser
         private void Core_PermissionRequested(object sender, CoreWebView2PermissionRequestedEventArgs e)
         {
             e.State = CoreWebView2PermissionState.Deny;
-            logger?.Debug(
+            global::AnikiHelper.AnikiLog.Debug(logger, 
                 "[AnikiHelper][WebBrowser] Permission denied: " + e.PermissionKind);
         }
 
@@ -1479,7 +1771,7 @@ namespace AnikiHelper.Services.WebBrowser
         {
             e.Cancel = true;
             SetFooterStatus(Loc("WebBrowser_DownloadBlocked", "Downloads are disabled"));
-            logger?.Debug("[AnikiHelper][WebBrowser] Download blocked.");
+            global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][WebBrowser] Download blocked.");
         }
 
         private void Core_ProcessFailed(object sender, CoreWebView2ProcessFailedEventArgs e)
@@ -1504,22 +1796,31 @@ namespace AnikiHelper.Services.WebBrowser
 
             try
             {
+                global::AnikiHelper.AnikiLog.Debug(logger, 
+                    $"[AnikiHelper][WebBrowser][Focus] Foreground request | Visible={host.IsVisible}, HostActive={host.IsActive}, BrowserActiveFlag={browserWindowActive}, Mode={viewMode}.");
+
                 if (!host.IsVisible)
                 {
                     host.Show();
                 }
 
                 host.WindowState = WindowState.Normal;
-                host.Activate();
+                var activateResult = host.Activate();
                 host.Focus();
 
                 var handle = new WindowInteropHelper(host).Handle;
+                var foregroundResult = false;
                 if (handle != IntPtr.Zero)
                 {
-                    SetForegroundWindow(handle);
+                    foregroundResult = SetForegroundWindow(handle);
                 }
 
-                browserWindowActive = true;
+                // Do not claim the browser is active unless WPF actually considers the
+                // window active. WindowHost_Activated remains the authoritative transition.
+                browserWindowActive = host.IsActive;
+
+                global::AnikiHelper.AnikiLog.Debug(logger, 
+                    $"[AnikiHelper][WebBrowser][Focus] Foreground request result | ActivateResult={activateResult}, SetForegroundResult={foregroundResult}, HostActive={host.IsActive}, BrowserActiveFlag={browserWindowActive}.");
 
                 if (pointerSessionActive)
                 {
@@ -1537,7 +1838,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Failed to focus browser window.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Failed to focus browser window.");
             }
         }
 
@@ -1598,12 +1899,12 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Failed to read favorites.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Failed to read favorites.");
                 return new List<AnikiWebFavorite>();
             }
         }
 
-        private void CleanupCore(Window expectedHost, WebView2 expectedView)
+        private void CleanupCore(Window expectedHost, WebView2CompositionControl expectedView)
         {
             if (windowHost == null && webView == null)
             {
@@ -1618,23 +1919,15 @@ namespace AnikiHelper.Services.WebBrowser
             sessionGeneration++;
 
             var host = windowHost ?? expectedHost;
+            var area = browserArea;
             var view = webView ?? expectedView;
-            var core = view?.CoreWebView2;
 
-            windowHost = null;
-            browserArea = null;
-            homeView = null;
-            webView = null;
-            loadingText = null;
-            footerStatusText = null;
-            pendingAddress = string.Empty;
-            requestedTitle = string.Empty;
-            browserWindowActive = false;
-            initializing = false;
-            closing = false;
-            pointerSessionActive = false;
-            homePointerMode = false;
-            viewMode = AnikiWebBrowserViewMode.Home;
+            if (footerAutoHideTimer != null)
+            {
+                footerAutoHideTimer.Stop();
+                footerAutoHideTimer.Tick -= FooterAutoHideTimer_Tick;
+                footerAutoHideTimer = null;
+            }
 
             pointerController.EndSession();
 
@@ -1648,10 +1941,35 @@ namespace AnikiHelper.Services.WebBrowser
                 try { host.PreviewKeyDown -= WindowHost_PreviewKeyDown; } catch { }
             }
 
-            UnconfigureCoreWebView(core);
+            // Break the WPF visual-tree references before disposing the native WebView2
+            // controller. This prevents the closed browser page from remaining reachable.
+            DisposeWebViewControl(view, area);
+            try { area?.Children.Clear(); } catch { }
+            try { if (host != null) host.Content = null; } catch { }
 
-            try { core?.Stop(); } catch { }
-            try { view?.Dispose(); } catch { }
+            // A new environment will be created next time the browser opens. Cookies and
+            // sessions remain on disk in userDataFolder, but this service no longer keeps
+            // the previous WebView2 environment reachable after the browser is closed.
+            environment = null;
+
+            windowHost = null;
+            browserArea = null;
+            homeView = null;
+            webView = null;
+            loadingText = null;
+            footerLegendPanel = null;
+            footerStatusText = null;
+            footerContainer = null;
+            footerRow = null;
+            pendingAddress = string.Empty;
+            requestedTitle = string.Empty;
+            browserWindowActive = false;
+            Interlocked.Exchange(ref controllerFocusRecoveryQueued, 0);
+            initializing = false;
+            closing = false;
+            pointerSessionActive = false;
+            homePointerMode = false;
+            viewMode = AnikiWebBrowserViewMode.Home;
 
             if (host != null && host.IsVisible)
             {
@@ -1659,10 +1977,10 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             OpenStateChanged?.Invoke(false);
-            DebugLog("[AnikiHelper][WebBrowser] Closed.");
+            DebugLog("[AnikiHelper][WebBrowser] Closed and WebView2 resources released.");
         }
 
-        private bool IsCurrentSession(int generation, Window expectedHost, WebView2 expectedView)
+        private bool IsCurrentSession(int generation, Window expectedHost, WebView2CompositionControl expectedView)
         {
             return !disposed &&
                    !closing &&
@@ -1876,7 +2194,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     ex,
                     "[AnikiHelper][WebBrowser] Failed to load the active theme logo.");
             }
@@ -2045,7 +2363,7 @@ namespace AnikiHelper.Services.WebBrowser
             {
                 if (global::AnikiHelper.AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    logger?.Debug(message);
+                    global::AnikiHelper.AnikiLog.Debug(logger, message);
                 }
             }
             catch
@@ -2091,7 +2409,7 @@ namespace AnikiHelper.Services.WebBrowser
         private const int WheelDelta = 120;
 
         private readonly ILogger logger;
-        private readonly double bottomInsetDip;
+        private double bottomInsetDip;
         private readonly object stateLock = new object();
         private readonly Input[] inputBuffer = new Input[1];
 
@@ -2104,7 +2422,8 @@ namespace AnikiHelper.Services.WebBrowser
         private double edgeScrollVelocity;
         private double edgeWheelRemainder;
         private bool cursorVisibilityHeld;
-        private int cursorVisibilityAdjustments;
+        private bool cursorWasVisibleBeforeSession = true;
+        private int cursorVisibilityEnsureQueued;
         private Rect pointerBounds;
         private bool hasPointerBounds;
         private int edgeScrollZonePixels;
@@ -2157,6 +2476,45 @@ namespace AnikiHelper.Services.WebBrowser
                 edgeWheelRemainder = 0;
                 UpdatePointerBounds(hostWindow);
                 AcquireVisibleCursor();
+                LockCursorToPointerBounds();
+            }
+        }
+
+        public bool ResumeInputIfSuspended()
+        {
+            lock (stateLock)
+            {
+                if (!sessionActive || !inputSuspended)
+                {
+                    return false;
+                }
+
+                // This method can be called from the SDL polling thread, so do not read
+                // WPF Window properties here. The pointer bounds are already maintained by
+                // BeginSession/ResumeInput and the UI-thread size/location handlers.
+                inputSuspended = false;
+                ignoreClickUntilReleased = true;
+                wheelAccumulator = 0;
+                edgeScrollVelocity = 0;
+                edgeWheelRemainder = 0;
+                AcquireVisibleCursor();
+                LockCursorToPointerBounds();
+                return true;
+            }
+        }
+
+        public void SetBottomInset(double value)
+        {
+            lock (stateLock)
+            {
+                bottomInsetDip = Math.Max(0, value);
+
+                if (!sessionActive || inputSuspended)
+                {
+                    return;
+                }
+
+                UpdatePointerBounds(hostWindow);
                 LockCursorToPointerBounds();
             }
         }
@@ -2216,11 +2574,7 @@ namespace AnikiHelper.Services.WebBrowser
                     UpdateLeftButton(state.LeftClick);
                 }
 
-                // SDL reports negative Y when the stick is pushed up. Windows expects a
-                // positive wheel delta to scroll up, so the value is intentionally inverted.
-                // The left stick is used for scrolling to stay consistent with the existing
-                // Aniki Helper gamepad mouse feature. When the stick is idle, keeping the
-                // cursor near the top or bottom edge automatically scrolls the page.
+                // Invert SDL Y for Windows wheel direction; edge position handles auto-scroll.
                 var stickScrollDirection = -NormalizeAxis(state.LeftY);
 
                 if (Math.Abs(stickScrollDirection) >= 0.01)
@@ -2345,8 +2699,10 @@ namespace AnikiHelper.Services.WebBrowser
                 wheelAccumulator = 0;
                 edgeScrollVelocity = 0;
                 edgeWheelRemainder = 0;
+                // Keep the cursor visibility owned by the browser session while a
+                // temporary window (for example the virtual keyboard) has focus. Restoring
+                // it here can fight with the keyboard and corrupt Win32's ShowCursor count.
                 UnlockCursor();
-                ReleaseVisibleCursor();
             }
         }
 
@@ -2516,7 +2872,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
             catch (Exception ex)
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     ex,
                     "[AnikiHelper][WebBrowser] Failed to update browser pointer bounds.");
 
@@ -2572,84 +2928,70 @@ namespace AnikiHelper.Services.WebBrowser
                     (DateTime.UtcNow - lastSendInputFailureLogUtc).TotalSeconds >= 5)
                 {
                     lastSendInputFailureLogUtc = DateTime.UtcNow;
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         "[AnikiHelper][WebBrowser] SetCursorPos failed. Win32Error=" +
                         Marshal.GetLastWin32Error());
                 }
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Cursor movement failed.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Cursor movement failed.");
             }
         }
 
         private void EnsureVisibleCursor()
         {
-            if (!cursorVisibilityHeld)
+            if (IsNativeCursorVisible())
             {
-                AcquireVisibleCursor();
+                return;
+            }
+
+            // Controller polling may run outside the WPF UI thread. ShowCursor uses an
+            // internal display count, so keep every visibility change on the browser
+            // window's dispatcher thread instead of mixing it with keyboard focus changes.
+            var dispatcher = hostWindow?.Dispatcher ?? Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            if (Interlocked.Exchange(ref cursorVisibilityEnsureQueued, 1) != 0)
+            {
                 return;
             }
 
             try
             {
-                var info = new CursorInfo
+                dispatcher.BeginInvoke(new Action(delegate
                 {
-                    Size = Marshal.SizeOf(typeof(CursorInfo))
-                };
+                    Interlocked.Exchange(ref cursorVisibilityEnsureQueued, 0);
 
-                if (GetCursorInfo(ref info) && (info.Flags & CursorShowing) != 0)
-                {
-                    return;
-                }
-
-                // Playnite Fullscreen may hide the native cursor again after WebView2 takes
-                // focus. Restore it only when Windows reports it hidden and remember each
-                // counter adjustment so it can be undone when the browser closes.
-                for (var attempt = 0; attempt < 16; attempt++)
-                {
-                    var displayCount = ShowCursor(true);
-                    cursorVisibilityAdjustments++;
-                    if (displayCount >= 0)
+                    lock (stateLock)
                     {
-                        break;
+                        if (!sessionActive)
+                        {
+                            return;
+                        }
+
+                        EnsureNativeCursorVisible();
                     }
-                }
+                }), DispatcherPriority.Input);
             }
-            catch (Exception ex)
+            catch
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Failed to restore the native cursor.");
+                Interlocked.Exchange(ref cursorVisibilityEnsureQueued, 0);
             }
         }
 
         private void AcquireVisibleCursor()
         {
-            if (cursorVisibilityHeld)
+            if (!cursorVisibilityHeld)
             {
-                return;
+                cursorWasVisibleBeforeSession = IsNativeCursorVisible();
+                cursorVisibilityHeld = true;
             }
 
-            cursorVisibilityHeld = true;
-            cursorVisibilityAdjustments = 0;
-
-            try
-            {
-                // Playnite Fullscreen can keep the native cursor display counter below zero.
-                // Raise it only for this browser session, then restore the exact count later.
-                for (var attempt = 0; attempt < 16; attempt++)
-                {
-                    var displayCount = ShowCursor(true);
-                    cursorVisibilityAdjustments++;
-                    if (displayCount >= 0)
-                    {
-                        break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Failed to show the native cursor.");
-            }
+            EnsureNativeCursorVisible();
         }
 
         private void ReleaseVisibleCursor()
@@ -2659,22 +3001,63 @@ namespace AnikiHelper.Services.WebBrowser
                 return;
             }
 
+            var restoreVisible = cursorWasVisibleBeforeSession;
             cursorVisibilityHeld = false;
+            cursorWasVisibleBeforeSession = true;
+            Interlocked.Exchange(ref cursorVisibilityEnsureQueued, 0);
 
             try
             {
-                for (var i = 0; i < cursorVisibilityAdjustments; i++)
+                // Restore the actual state observed before the browser opened instead of
+                // undoing a saved number of ShowCursor calls. The virtual keyboard and
+                // Playnite may both change the display count while the browser is open.
+                if (restoreVisible)
                 {
-                    ShowCursor(false);
+                    EnsureNativeCursorVisible();
+                }
+                else
+                {
+                    EnsureNativeCursorHidden();
                 }
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] Failed to restore cursor visibility.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] Failed to restore cursor visibility.");
             }
-            finally
+        }
+
+        private static bool IsNativeCursorVisible()
+        {
+            try
             {
-                cursorVisibilityAdjustments = 0;
+                var info = new CursorInfo
+                {
+                    Size = Marshal.SizeOf(typeof(CursorInfo))
+                };
+
+                // If Windows cannot report the state, assume visible. This is the safer
+                // fallback because it prevents the browser from hiding a user's cursor.
+                return !GetCursorInfo(ref info) || (info.Flags & CursorShowing) != 0;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static void EnsureNativeCursorVisible()
+        {
+            for (var attempt = 0; attempt < 16 && !IsNativeCursorVisible(); attempt++)
+            {
+                ShowCursor(true);
+            }
+        }
+
+        private static void EnsureNativeCursorHidden()
+        {
+            for (var attempt = 0; attempt < 16 && IsNativeCursorVisible(); attempt++)
+            {
+                ShowCursor(false);
             }
         }
 
@@ -2701,14 +3084,14 @@ namespace AnikiHelper.Services.WebBrowser
                     (DateTime.UtcNow - lastSendInputFailureLogUtc).TotalSeconds >= 5)
                 {
                     lastSendInputFailureLogUtc = DateTime.UtcNow;
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         "[AnikiHelper][WebBrowser] SendInput failed. Win32Error=" +
                         Marshal.GetLastWin32Error());
                 }
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WebBrowser] SendInput threw an exception.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WebBrowser] SendInput threw an exception.");
             }
         }
 

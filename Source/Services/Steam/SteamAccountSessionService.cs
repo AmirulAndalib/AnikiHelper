@@ -69,11 +69,7 @@ namespace AnikiHelper.Services
         }
     }
 
-    /// <summary>
-    /// Unified Steam account session based on Playnite WebView/CEF cookies.
-    /// The Store-domain cookies power personalized Store pages, while the authenticated
-    /// webapi_token is resolved only during explicit connection checks for friends and player data.
-    /// </summary>
+    /// <summary>Steam account session backed by Playnite WebView cookies.</summary>
     public sealed class SteamAccountSessionService
     {
         private readonly IPlayniteAPI api;
@@ -161,12 +157,7 @@ namespace AnikiHelper.Services
             }
         }
 
-        /// <summary>
-        /// Performs an explicit Steam services check. Unlike the lightweight startup probe,
-        /// this method also visits Steam Community in the same offscreen WebView to resolve
-        /// the authenticated web API token used by friends and player-data services.
-        /// It is intentionally called only from user-driven connection/check actions.
-        /// </summary>
+        /// <summary>Runs the explicit Steam connection check and resolves the authenticated web API token.</summary>
         public async Task<SteamAccountSessionInfo> ProbeForServicesAsync(CancellationToken ct)
         {
             await storeWebViewGate.WaitAsync(ct).ConfigureAwait(false);
@@ -568,13 +559,7 @@ namespace AnikiHelper.Services
             }
         }
 
-        /// <summary>
-        /// Fullscreen-safe login window.
-        ///
-        /// Playnite's modal WebView dialog can be created over the Fullscreen settings
-        /// window but remain visually black on some systems. A normal non-modal WebView
-        /// owns its own render loop and remains visible above Fullscreen.
-        /// </summary>
+        /// <summary>Opens the fullscreen-safe non-modal Steam login WebView.</summary>
         private void StartInteractiveLoginNonModal(
             TaskCompletionSource<SteamAccountSessionInfo> completion)
         {

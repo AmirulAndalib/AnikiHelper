@@ -27,7 +27,7 @@ namespace AnikiHelper
         private static CancellationTokenSource debounceCts;
         private static CancellationTokenSource animCts;
 
-        private const int DebounceMs = 500;          // decrease = more reactive
+        private const int DebounceMs = 800;          // decrease = more reactive
         private const int TransitionMs = 0;        // total fade time
         private const int TransitionSteps = 1;      // + more steps = smoother
 
@@ -655,7 +655,7 @@ namespace AnikiHelper
 
                 if (AnikiHelper.Instance?.Settings?.EnableDebugLogs == true)
                 {
-                    log.Debug("[DynColor] Color cache purged (json + ram). It will rebuild automatically.");
+                    global::AnikiHelper.AnikiLog.Debug(log, "[DynColor] Color cache purged (json + ram). It will rebuild automatically.");
                 }
             }
             catch (Exception ex)

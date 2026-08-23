@@ -186,7 +186,7 @@ namespace AnikiHelper.Services.MediaGallery
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper] Failed to check Screenshot Utilities local media availability.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper] Failed to check Screenshot Utilities local media availability.");
             }
 
             return false;

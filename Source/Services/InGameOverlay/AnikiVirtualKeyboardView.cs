@@ -118,10 +118,15 @@ namespace AnikiHelper.Services.InGameOverlay
             BuildUi();
         }
 
-        public void Open()
+        public void Open(string initialText = null)
         {
-            currentText = string.Empty;
-            cursorPosition = 0;
+            currentText = initialText ?? string.Empty;
+            if (currentText.Length > 160)
+            {
+                currentText = currentText.Substring(0, 160);
+            }
+
+            cursorPosition = currentText.Length;
             isUppercase = false;
             isSymbols = false;
             isExtendedSymbols = false;

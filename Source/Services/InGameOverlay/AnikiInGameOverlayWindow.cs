@@ -28,7 +28,6 @@ namespace AnikiHelper.Services.InGameOverlay
         private const string IconMedia = "\uE714";
         private const string IconAudio = "\uE995";
         private const string IconFriends = "\uE716";
-        private const string IconApps = "\uECAA";
         private const string IconMusic = "\uE189";
         private const string IconUniPlaySong = "\uE7F3";
         private const string IconTrophy = "\uE7C1";
@@ -113,7 +112,6 @@ namespace AnikiHelper.Services.InGameOverlay
         private Button mediaSectionButton;
         private Button audioSectionButton;
         private Button friendsButton;
-        private Button appsButton;
         private Button uniPlaySongButton;
         private Button musicButton;
         private Button achievementsSectionButton;
@@ -149,6 +147,8 @@ namespace AnikiHelper.Services.InGameOverlay
         private bool isQuitConfirmationVisible;
 
         private bool useControllerFocusVisual;
+
+        public bool SuppressInitialActivation { get; set; }
         private DateTime lastControllerNavigationTime = DateTime.MinValue;
         private int lastControllerNavigationDirection = 0;
         private DateTime lastControllerActionTime = DateTime.MinValue;
@@ -195,6 +195,12 @@ namespace AnikiHelper.Services.InGameOverlay
 
             Loaded += (s, e) =>
             {
+                if (SuppressInitialActivation)
+                {
+                    PrepareControllerFocusWithoutActivation();
+                    return;
+                }
+
                 Activate();
 
                 if (virtualKeyboardView != null && virtualKeyboardView.IsOpen)
@@ -605,7 +611,6 @@ namespace AnikiHelper.Services.InGameOverlay
                     musicButton,
                     uniPlaySongButton,
                     audioSectionButton,
-                    appsButton,
                     quitButton
                 }
                 : new[]
@@ -613,7 +618,6 @@ namespace AnikiHelper.Services.InGameOverlay
                     musicButton,
                     uniPlaySongButton,
                     audioSectionButton,
-                    appsButton,
                     friendsButton,
                     mediaSectionButton,
                     returnButton,
@@ -649,7 +653,6 @@ namespace AnikiHelper.Services.InGameOverlay
             SetSectionButtonEnabled(mediaSectionButton, true);
             SetSectionButtonEnabled(audioSectionButton, service.IsAudioSwitcherInstalled);
             SetSectionButtonEnabled(friendsButton, true);
-            SetSectionButtonEnabled(appsButton, true);
             SetSectionButtonEnabled(uniPlaySongButton, service.IsUniPlaySongInstalled);
             SetSectionButtonEnabled(musicButton, true);
             SetSectionButtonEnabled(keyboardButton, true);
@@ -1163,7 +1166,6 @@ namespace AnikiHelper.Services.InGameOverlay
             mediaSectionButton = CreateButton(IconMedia, Loc("LOCInGameOverlayLastCaptures", "Last Captures"), service.OpenLastCapturesWindow);
             audioSectionButton = CreateButton(IconAudio, Loc("LOCInGameOverlayAudio", "Audio Switcher"), service.OpenAudioSwitcherWindow);
             friendsButton = CreateButton(IconFriends, Loc("LOCInGameOverlayFriends", "Friends"), service.OpenFriendsWindow);
-            appsButton = CreateButton(IconApps, Loc("LOCInGameOverlayApps", "Apps"), service.OpenAppsWindow);
             uniPlaySongButton = CreateButton(IconUniPlaySong, Loc("LOCInGameOverlayUniPlaySong", "UniPlaySong"), service.OpenUniPlaySongWindow);
             musicButton = CreateButton(IconMusic, Loc("LOCInGameOverlayMusic", "Music Player"), service.OpenMusicPlayerWindow);
             achievementsSectionButton = CreateButton(IconTrophy, Loc("LOCInGameOverlayAchievements", "Achievements"), service.OpenAchievementsWindow);
@@ -2446,7 +2448,6 @@ namespace AnikiHelper.Services.InGameOverlay
             UpdateButtonVisualState(mediaSectionButton);
             UpdateButtonVisualState(audioSectionButton);
             UpdateButtonVisualState(friendsButton);
-            UpdateButtonVisualState(appsButton);
             UpdateButtonVisualState(uniPlaySongButton);
             UpdateButtonVisualState(musicButton);
             UpdateButtonVisualState(keyboardButton);
@@ -2751,7 +2752,14 @@ namespace AnikiHelper.Services.InGameOverlay
                     panelTransform.BeginAnimation(TranslateTransform.XProperty, slide);
                 }
 
-                FocusOverlayButton();
+                if (SuppressInitialActivation)
+                {
+                    PrepareControllerFocusWithoutActivation();
+                }
+                else
+                {
+                    FocusOverlayButton();
+                }
             }
             catch
             {
@@ -4027,7 +4035,7 @@ namespace AnikiHelper.Services.InGameOverlay
                 {
                     SetControlCenterChromeVisible(true);
 
-                    controllerFocusedButton = appsButton ?? firstButton;
+                    controllerFocusedButton = firstButton;
                     useControllerFocusVisual = true;
                     FocusSelectedButtonWithoutTraversal();
                     UpdateAllButtonVisualStates();
@@ -4049,12 +4057,12 @@ namespace AnikiHelper.Services.InGameOverlay
             ShowVirtualKeyboardCore(openedDirectly: false);
         }
 
-        public void ShowVirtualKeyboardDirect()
+        public void ShowVirtualKeyboardDirect(string initialText = null)
         {
-            ShowVirtualKeyboardCore(openedDirectly: true);
+            ShowVirtualKeyboardCore(openedDirectly: true, initialText: initialText);
         }
 
-        private void ShowVirtualKeyboardCore(bool openedDirectly)
+        private void ShowVirtualKeyboardCore(bool openedDirectly, string initialText = null)
         {
             try
             {
@@ -4074,7 +4082,7 @@ namespace AnikiHelper.Services.InGameOverlay
                 HideAchievements(false);
 
                 SetControlCenterChromeVisible(false);
-                virtualKeyboardView.Open();
+                virtualKeyboardView.Open(initialText);
 
                 // Direct opening can happen while the WPF window is still hidden and
                 // its constructor opacity is 0. Make only the keyboard visible before Show().
@@ -4119,7 +4127,7 @@ namespace AnikiHelper.Services.InGameOverlay
                 if (virtualKeyboardOpenedDirectly)
                 {
                     virtualKeyboardOpenedDirectly = false;
-                    service.CloseDirectVirtualKeyboard();
+                    service.HandleDirectVirtualKeyboardClosed();
                     return;
                 }
 
@@ -4139,7 +4147,7 @@ namespace AnikiHelper.Services.InGameOverlay
             try
             {
                 virtualKeyboardOpenedDirectly = false;
-                service.SendVirtualKeyboardText(text ?? string.Empty, pressEnter);
+                service.HandleDirectVirtualKeyboardSubmit(text ?? string.Empty, pressEnter);
             }
             catch
             {
@@ -6412,12 +6420,7 @@ namespace AnikiHelper.Services.InGameOverlay
             var now = DateTime.Now;
             var elapsed = (now - lastControllerNavigationTime).TotalMilliseconds;
 
-            // One physical controller press can arrive twice:
-            // 1) through the overlay SDL listener
-            // 2) through WPF/Playnite PreviewKeyDown as an arrow key
-            //
-            // Keep a short shared gate for both paths. 160ms is enough
-            // to block the duplicate, but still feels much faster than 280ms.
+            // SDL and WPF can report the same press; share a short duplicate-input gate.
             if (elapsed < 160)
             {
                 return false;
@@ -6536,11 +6539,11 @@ namespace AnikiHelper.Services.InGameOverlay
 
             if (service.IsGameRunning)
             {
-                return new[] { returnButton, keyboardButton, achievementsSectionButton, friendsButton, mediaSectionButton, musicButton, uniPlaySongButton, audioSectionButton, appsButton, quitButton }
+                return new[] { returnButton, keyboardButton, achievementsSectionButton, friendsButton, mediaSectionButton, musicButton, uniPlaySongButton, audioSectionButton, quitButton }
                     .WhereButtonCanReceiveControllerFocus();
             }
 
-            return new[] { musicButton, uniPlaySongButton, audioSectionButton, appsButton, friendsButton, mediaSectionButton, keyboardButton }
+            return new[] { musicButton, uniPlaySongButton, audioSectionButton, friendsButton, mediaSectionButton, keyboardButton }
                 .WhereButtonCanReceiveControllerFocus();
         }
 
@@ -6623,12 +6626,6 @@ namespace AnikiHelper.Services.InGameOverlay
                     return;
                 }
 
-                if (button == appsButton)
-                {
-                    service.OpenAppsWindow();
-                    return;
-                }
-
                 if (button == uniPlaySongButton)
                 {
                     service.OpenUniPlaySongWindow();
@@ -6689,6 +6686,35 @@ namespace AnikiHelper.Services.InGameOverlay
                     controllerFocusedButton.Focus();
                     Keyboard.Focus(controllerFocusedButton);
                 }
+            }
+            catch
+            {
+            }
+        }
+
+        public void PrepareControllerFocusWithoutActivation()
+        {
+            try
+            {
+                var target = firstButton;
+
+                if (!CanButtonReceiveControllerFocus(target))
+                {
+                    var mainButtons = GetMainControllerButtons();
+                    target = mainButtons.Length > 0 ? mainButtons[0] : null;
+                }
+
+                if (!CanButtonReceiveControllerFocus(target))
+                {
+                    return;
+                }
+
+                controllerFocusedButton = target;
+                useControllerFocusVisual = true;
+                lastControllerNavigationTime = DateTime.MinValue;
+                lastControllerNavigationDirection = 0;
+                lastControllerActionTime = DateTime.MinValue;
+                UpdateAllButtonVisualStates();
             }
             catch
             {

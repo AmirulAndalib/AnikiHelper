@@ -59,12 +59,14 @@ namespace AnikiHelper.Services
         private readonly HashSet<Window> secondaryMusicWindows = new HashSet<Window>();
         private readonly HashSet<Window> suppressFinalFocusRestoreWindows = new HashSet<Window>();
         private Func<bool> isOverlayOpenOrOpening;
+        private Func<bool> blockWindowOpenProvider;
         private Func<string, bool> cancelRequestHandler;
         public event Action<bool> OpenWindowStateChanged;
         public event Action<bool> SecondaryMusicStateChanged;
         private bool lastReportedOpenWindowState;
         private bool lastReportedSecondaryMusicState;
         private const string QuickAccessWindowStyleName = "QuickAccessWindowStyle";
+        private const string VideoPlayerWindowStyleName = "VideoPlayerWindowStyle";
 
         public AnikiWindowManager(IPlayniteAPI playniteApi)
         {
@@ -75,6 +77,11 @@ namespace AnikiHelper.Services
         public void SetOverlayOpenStateProvider(Func<bool> provider)
         {
             isOverlayOpenOrOpening = provider;
+        }
+
+        public void SetWindowOpenBlockProvider(Func<bool> provider)
+        {
+            blockWindowOpenProvider = provider;
         }
 
         public void SetCancelRequestHandler(Func<string, bool> handler)
@@ -291,7 +298,7 @@ namespace AnikiHelper.Services
 
             if (windows.Any(tracked => tracked?.Window != null && ReferenceEquals(tracked.Window, window)))
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] External window already tracked. " +
                     $"Style={styleKey ?? "<none>"}, {DescribeWindow(window)}, StackCount={windows.Count}");
                 return;
@@ -322,14 +329,14 @@ namespace AnikiHelper.Services
 
             window.Closed += (s, e) =>
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] CLOSED event received for external window. " +
                     $"{DescribeWindow(window)}, StackCountBeforeRemove={windows.Count}");
 
                 RemoveWindow(window);
             };
 
-            logger?.Debug(
+            global::AnikiHelper.AnikiLog.Debug(logger, 
                 $"[AnikiHelper][WindowManager] External window registered. {DescribeTrackedWindow(trackedEntry)}, " +
                 $"StackCount={windows.Count}");
 
@@ -346,7 +353,7 @@ namespace AnikiHelper.Services
 
             CleanupClosedWindows();
 
-            logger?.Debug(
+            global::AnikiHelper.AnikiLog.Debug(logger, 
                 $"[AnikiHelper][WindowManager] CANCEL requested. Source={source ?? "<unknown>"}, " +
                 $"StackCount={windows.Count}, Top={DescribeTrackedWindow(windows.Any() ? windows.Peek() : null)}");
 
@@ -361,7 +368,7 @@ namespace AnikiHelper.Services
             {
                 if (cancelRequestHandler?.Invoke(topStyleKey) == true)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         $"[AnikiHelper][WindowManager] CANCEL consumed by specialized handler. Style={topStyleKey ?? "<none>"}");
                     return true;
                 }
@@ -389,9 +396,8 @@ namespace AnikiHelper.Services
 
             if (!windows.Any())
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     "[AnikiHelper][WindowManager] EXTERNAL HANDOFF requested but the window stack is empty.");
-
                 return false;
             }
 
@@ -405,81 +411,42 @@ namespace AnikiHelper.Services
 
             secondaryMusicWindows.Remove(top);
 
-            logger?.Debug(
-                $"[AnikiHelper][WindowManager] EXTERNAL HANDOFF close requested. {DescribeTrackedWindow(topEntry)}, " +
-                $"StackCountAfterPop={windows.Count}");
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                $"[AnikiHelper][WindowManager] EXTERNAL HANDOFF synchronous close requested. " +
+                $"{DescribeTrackedWindow(topEntry)}, StackCountAfterPop={windows.Count}");
 
-            if (top == null)
+            if (top != null)
             {
-                NotifyOpenWindowStateChanged();
-                afterClosed?.Invoke();
-                return true;
-            }
+                suppressFinalFocusRestoreWindows.Add(top);
 
-            // The normal Closed handler would restore focus to Playnite when the last Aniki window
-            // disappears. During an external handoff that restoration races with the native window
-            // we are about to open, so suppress it for this one close only.
-            suppressFinalFocusRestoreWindows.Add(top);
-
-            EventHandler closedHandler = null;
-            closedHandler = (sender, args) =>
-            {
-                top.Closed -= closedHandler;
-
-                logger?.Debug(
-                    $"[AnikiHelper][WindowManager] EXTERNAL HANDOFF source window fully closed. {DescribeWindow(top)}");
-
-                var targetDispatcher = Application.Current?.Dispatcher ?? top.Dispatcher;
-                if (targetDispatcher == null)
-                {
-                    afterClosed?.Invoke();
-                    return;
-                }
-
-                targetDispatcher.BeginInvoke(new Action(() =>
-                {
-                    try
-                    {
-                        afterClosed?.Invoke();
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.Warn(ex, "[AnikiHelper][WindowManager] External handoff callback failed.");
-                    }
-                }), DispatcherPriority.Normal);
-            };
-
-            top.Closed += closedHandler;
-
-            if (top.IsVisible)
-            {
-                top.Hide();
-
-                logger?.Debug(
-                    $"[AnikiHelper][WindowManager] EXTERNAL HANDOFF source hidden before deferred close. {DescribeWindow(top)}");
-            }
-
-            NotifyOpenWindowStateChanged();
-
-            top.Dispatcher.BeginInvoke(new Action(() =>
-            {
                 try
                 {
-                    logger?.Debug(
-                        $"[AnikiHelper][WindowManager] EXTERNAL HANDOFF deferred close executing. {DescribeWindow(top)}");
+                    // Close directly in the same dispatcher pass; this lets
+                    // Playnite finish its dialog/dim cleanup without creating a visible gap.
                     top.Close();
+                }
+                catch (InvalidOperationException)
+                {
+                    suppressFinalFocusRestoreWindows.Remove(top);
                 }
                 catch (Exception ex)
                 {
                     suppressFinalFocusRestoreWindows.Remove(top);
-                    top.Closed -= closedHandler;
-                    logger?.Warn(ex, "[AnikiHelper][WindowManager] External handoff close failed.");
-                    afterClosed?.Invoke();
+                    logger?.Warn(ex, "[AnikiHelper][WindowManager] External handoff synchronous close failed.");
                 }
-            }), DispatcherPriority.Background);
+            }
 
-            // Deliberately do not call FocusAfterClosing here. The callback opens and focuses the
-            // external Playnite window after the Aniki source window has fully closed.
+            NotifyOpenWindowStateChanged();
+
+            try
+            {
+                afterClosed?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][WindowManager] External handoff callback failed.");
+            }
+
             return true;
         }
 
@@ -489,7 +456,7 @@ namespace AnikiHelper.Services
 
             if (!windows.Any())
             {
-                logger?.Debug("[AnikiHelper][WindowManager] CLOSE requested but the window stack is empty.");
+                global::AnikiHelper.AnikiLog.Debug(logger, "[AnikiHelper][WindowManager] CLOSE requested but the window stack is empty.");
                 return false;
             }
 
@@ -503,7 +470,7 @@ namespace AnikiHelper.Services
 
             secondaryMusicWindows.Remove(top);
 
-            logger?.Debug(
+            global::AnikiHelper.AnikiLog.Debug(logger, 
                 $"[AnikiHelper][WindowManager] CLOSE requested. {DescribeTrackedWindow(topEntry)}, " +
                 $"StackCountAfterPop={windows.Count}");
 
@@ -515,14 +482,14 @@ namespace AnikiHelper.Services
                     {
                         top.Hide();
 
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             $"[AnikiHelper][WindowManager] Window hidden before deferred close. {DescribeWindow(top)}");
                     }
                     else
                     {
                         // IsVisible=false does not mean that the WPF window is closed. A hidden
                         // Playnite dialog can still keep its owner dimmed until Close() is called.
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             $"[AnikiHelper][WindowManager] Popped window was already hidden; forcing its deferred close. {DescribeWindow(top)}");
                     }
 
@@ -530,7 +497,7 @@ namespace AnikiHelper.Services
                     {
                         try
                         {
-                            logger?.Debug(
+                            global::AnikiHelper.AnikiLog.Debug(logger, 
                                 $"[AnikiHelper][WindowManager] Deferred close executing. {DescribeWindow(top)}");
 
                             top.Close();
@@ -544,7 +511,7 @@ namespace AnikiHelper.Services
                             logger?.Warn(ex,
                                 $"[AnikiHelper][WindowManager] Deferred close failed. {DescribeWindow(top)}");
                         }
-                    }), DispatcherPriority.Background);
+                    }), DispatcherPriority.ApplicationIdle);
                 }
                 catch (InvalidOperationException)
                 {
@@ -566,16 +533,16 @@ namespace AnikiHelper.Services
             }
             else
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     "[AnikiHelper][WindowManager] Popped tracked entry had no window instance.");
             }
 
             NotifyOpenWindowStateChanged();
 
             // Restore the real parent immediately after Hide(), including when this was the
-            // final Aniki window. This matches the former no-desktop-flash behavior.
-            // The actual Close() now runs at Background priority instead of ApplicationIdle,
-            // keeping the hidden owned window alive for the shortest practical time.
+            // final Aniki window. Keep the hidden owned window alive until ApplicationIdle,
+            // matching the previous behavior and preventing the Windows desktop from flashing
+            // before Playnite has fully returned to the foreground.
             FocusAfterClosing(topEntry);
 
             return true;
@@ -621,7 +588,7 @@ namespace AnikiHelper.Services
 
                 hadWindows = managedWindows.Count > 0;
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] CLOSE ALL AND WAIT requested. " +
                     $"Source={source ?? "<unknown>"}, TrackedCount={trackedEntries.Count}, " +
                     $"ManagedWindowCount={managedWindows.Count}");
@@ -755,7 +722,7 @@ namespace AnikiHelper.Services
             // been closed by its own input handler.
             if (entries.Count == 0)
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     "[AnikiHelper][WindowManager] Emergency close ignored because no tracked window is open; foreground left unchanged.");
                 return false;
             }
@@ -815,7 +782,7 @@ namespace AnikiHelper.Services
                         playniteWindow.Activate();
                         playniteWindow.Focus();
 
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             "[AnikiHelper][WindowManager] Emergency close completed; Playnite focus restored.");
                     }
                     catch (Exception ex)
@@ -840,16 +807,44 @@ namespace AnikiHelper.Services
             return top != null && top.IsActive;
         }
 
+        private bool IsWindowOpenBlockedByGameForeground()
+        {
+            try
+            {
+                return blockWindowOpenProvider?.Invoke() == true;
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][ControllerGuard] Window-open guard provider failed. Allowing request.");
+                return false;
+            }
+        }
+
+        private void LogGameForegroundWindowBlock(string styleKey, string phase)
+        {
+            global::AnikiHelper.AnikiLog.Debug(logger, 
+                $"[AnikiHelper][ControllerGuard] WINDOW BLOCKED | Style={styleKey ?? "<null>"} | " +
+                $"Phase={phase} | Reason=Game is running/launching and Playnite/Aniki does not own foreground.");
+        }
+
         private void Open(string styleKey, bool forceChild, string focusTargetName, bool focusFirst, bool refocusAfterClick, bool noDim, bool secondaryMusic)
         {
             if (string.IsNullOrWhiteSpace(styleKey))
                 return;
 
-            logger?.Debug(
+            global::AnikiHelper.AnikiLog.Debug(logger, 
                 $"[AnikiHelper][WindowManager] OPEN requested. Style={styleKey}, " +
                 $"Type={(forceChild ? "Child" : "Main")}, FocusTarget={focusTargetName ?? "<none>"}, " +
                 $"FocusFirst={focusFirst}, RefocusAfterClick={refocusAfterClick}, NoDim={noDim}, " +
                 $"SecondaryMusic={secondaryMusic}, StackCount={windows.Count}");
+
+            // Second line of defence: even if a theme command or delayed RelayCommand somehow
+            // fires while the game owns foreground, do not create/activate a Playnite/Aniki window.
+            if (IsWindowOpenBlockedByGameForeground())
+            {
+                LogGameForegroundWindowBlock(styleKey, "request");
+                return;
+            }
 
             // Reserve custom pages and the in-game overlay as mutually exclusive UI layers.
             // This first check blocks immediately when the overlay shortcut has already queued an opening.
@@ -868,6 +863,14 @@ namespace AnikiHelper.Services
             dispatcher.Invoke(() =>
             {
                 CleanupClosedWindows();
+
+                // Re-check on the UI thread because foreground ownership can change between
+                // the controller callback / command execution and the queued WPF open.
+                if (IsWindowOpenBlockedByGameForeground())
+                {
+                    LogGameForegroundWindowBlock(styleKey, "UI dispatch");
+                    return;
+                }
 
                 // Check again on the UI thread because an overlay request can race this queued window open.
                 if (IsOverlayBlockingCustomWindowOpen())
@@ -889,7 +892,7 @@ namespace AnikiHelper.Services
 
                 if (existingWindow != null)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         $"[AnikiHelper][WindowManager] Existing visible window reused. {DescribeTrackedWindow(existingEntry)}, " +
                         $"StackCount={windows.Count}");
                     if (secondaryMusic)
@@ -909,8 +912,39 @@ namespace AnikiHelper.Services
 
                 if (!string.Equals(styleKey, QuickAccessWindowStyleName, StringComparison.OrdinalIgnoreCase))
                 {
-                    CloseWindowByStyleKey(QuickAccessWindowStyleName);
-                    CleanupClosedWindows();
+                    var quickAccessWasOpen = windows.Any(entry =>
+                        entry?.Window != null &&
+                        entry.Window.IsVisible &&
+                        string.Equals(entry.StyleKey, QuickAccessWindowStyleName, StringComparison.OrdinalIgnoreCase));
+
+                    if (quickAccessWasOpen)
+                    {
+                        // Close Quick Access, wait one dispatcher turn, then open the destination window.
+                        // Keep final focus restore suppressed during the handoff.
+                        CloseWindowByStyleKey(
+                            QuickAccessWindowStyleName,
+                            closeImmediately: true,
+                            suppressFinalFocusRestore: true);
+                        CleanupClosedWindows();
+
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
+                            $"[AnikiHelper][WindowManager] Quick Access handoff waiting one dispatcher turn before opening destination. " +
+                            $"Destination={styleKey}");
+
+                        dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            Open(
+                                styleKey,
+                                forceChild,
+                                focusTargetName,
+                                focusFirst,
+                                refocusAfterClick,
+                                noDim,
+                                secondaryMusic);
+                        }), DispatcherPriority.ApplicationIdle);
+
+                        return;
+                    }
                 }
 
                 // NoDim is used for theme child windows that draw their own dim/gradient in XAML.
@@ -922,11 +956,20 @@ namespace AnikiHelper.Services
                         ShowMinimizeButton = false
                     });
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Window instance created. Style={styleKey}, " +
                     $"Type={(forceChild ? "Child" : "Main")}, RawWindowType={window?.GetType().FullName ?? "<null>"}");
 
                 window.Tag = styleKey;
+
+                // LibVLCSharp.WPF creates a native child rendering surface. A raw WPF Window
+                // defaults to a white system brush, which can briefly flash before the first
+                // video frame. Paint the Video Player window black before any content is shown.
+                if (noDim && string.Equals(styleKey, VideoPlayerWindowStyleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    window.Background = Brushes.Black;
+                }
+
                 window.ShowInTaskbar = false;
                 window.WindowStyle = WindowStyle.None;
                 window.ResizeMode = ResizeMode.NoResize;
@@ -979,7 +1022,7 @@ namespace AnikiHelper.Services
                     }
                     catch (Exception ex)
                     {
-                        logger?.Debug(ex,
+                        global::AnikiHelper.AnikiLog.Debug(logger, ex,
                             $"[AnikiHelper][WindowManager] Failed to close unopened window after missing style. Style={styleKey}");
                     }
 
@@ -1034,12 +1077,23 @@ namespace AnikiHelper.Services
                     window.Owner = parent;
                 }
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Owner selected. Window={styleKey}, " +
                     $"Owner={DescribeWindow(window.Owner)}, StackCount={windows.Count}");
 
                 window.PreviewKeyDown += (s, e) =>
                 {
+                    // Backspace must remain a text-editing key while an editable text field
+                    // owns keyboard focus. Without this guard, Backspace is interpreted as the
+                    // global Back/Cancel action and closes modal surfaces such as the Video
+                    // Center artwork picker instead of deleting the previous character.
+                    if (e.Key == Key.Back &&
+                        Keyboard.FocusedElement is TextBoxBase focusedTextBox &&
+                        !focusedTextBox.IsReadOnly)
+                    {
+                        return;
+                    }
+
                     if (e.Key == Key.Escape || e.Key == Key.Back)
                     {
                         if (HandleCancelRequest("Window.PreviewKeyDown"))
@@ -1051,7 +1105,7 @@ namespace AnikiHelper.Services
 
                 window.Closed += (s, e) =>
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         $"[AnikiHelper][WindowManager] CLOSED event received. {DescribeWindow(window)}, " +
                         $"StackCountBeforeRemove={windows.Count}");
 
@@ -1086,7 +1140,7 @@ namespace AnikiHelper.Services
 
                 windows.Push(trackedWindow);
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Window pushed to stack. {DescribeTrackedWindow(trackedWindow)}, " +
                     $"StackCount={windows.Count}");
 
@@ -1102,13 +1156,13 @@ namespace AnikiHelper.Services
                 NotifyWindowOpeningState(secondaryMusic);
 
                 window.Show();
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Window shown. {DescribeWindow(window)}, StackCount={windows.Count}");
 
                 window.Activate();
                 window.Focus();
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Window activation requested. {DescribeWindow(window)}, " +
                     $"KeyboardFocus={DescribeFocusedElement()}");
 
@@ -1121,7 +1175,7 @@ namespace AnikiHelper.Services
 
                 if (!string.IsNullOrWhiteSpace(focusTargetName) || focusFirst)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         $"[AnikiHelper][WindowManager] Initial focus queued. Window={styleKey}, " +
                         $"Target={focusTargetName ?? "<first focusable>"}, FocusFirst={focusFirst}");
 
@@ -1129,7 +1183,7 @@ namespace AnikiHelper.Services
                     {
                         ApplyInitialFocus(window, focusTargetName, focusFirst);
 
-                        logger?.Debug(
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
                             $"[AnikiHelper][WindowManager] Initial focus pass completed. Window={styleKey}, " +
                             $"KeyboardFocus={DescribeFocusedElement()}");
                     }), DispatcherPriority.ApplicationIdle);
@@ -1145,7 +1199,7 @@ namespace AnikiHelper.Services
             }
             catch (Exception ex)
             {
-                logger?.Debug(ex, "[AnikiHelper][WindowManager] Failed to query overlay state.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WindowManager] Failed to query overlay state.");
                 return false;
             }
         }
@@ -1154,7 +1208,7 @@ namespace AnikiHelper.Services
         {
             try
             {
-                logger?.Debug($"[AnikiHelper][WindowManager] Window open blocked by overlay. Style={styleKey}, Stage={stage}");
+                global::AnikiHelper.AnikiLog.Debug(logger, $"[AnikiHelper][WindowManager] Window open blocked by overlay. Style={styleKey}, Stage={stage}");
             }
             catch
             {
@@ -1518,7 +1572,10 @@ namespace AnikiHelper.Services
             return true;
         }
 
-        private void CloseWindowByStyleKey(string styleKey)
+        private void CloseWindowByStyleKey(
+            string styleKey,
+            bool closeImmediately = false,
+            bool suppressFinalFocusRestore = false)
         {
             if (string.IsNullOrWhiteSpace(styleKey))
                 return;
@@ -1536,9 +1593,24 @@ namespace AnikiHelper.Services
 
                 try
                 {
-                    // Hide() removes the old page immediately so the destination can appear without
-                    // waiting. Close() must still run quickly: a hidden Playnite dialog can keep the
-                    // main window dimmed for as long as the dialog object remains alive.
+                    if (suppressFinalFocusRestore)
+                    {
+                        suppressFinalFocusRestoreWindows.Add(window);
+                    }
+
+                    if (closeImmediately)
+                    {
+                        global::AnikiHelper.AnikiLog.Debug(logger, 
+                            $"[AnikiHelper][WindowManager] Closing style window synchronously for handoff. " +
+                            $"Style={styleKey}, SuppressFinalFocusRestore={suppressFinalFocusRestore}, {DescribeWindow(window)}");
+
+                        // Do not Hide() first. Keeping the old dialog visible until Close() completes
+                        // avoids exposing the desktop/owner surface for an intermediate frame.
+                        window.Close();
+                        continue;
+                    }
+
+                    // Deferred closes still hide immediately, then release the Playnite dialog at idle.
                     if (window.IsVisible)
                     {
                         window.Hide();
@@ -1559,11 +1631,15 @@ namespace AnikiHelper.Services
                             logger?.Warn(ex,
                                 $"[AnikiHelper][WindowManager] Style window deferred close failed. Style={styleKey}, {DescribeWindow(window)}");
                         }
-                    }), DispatcherPriority.Background);
+                    }), DispatcherPriority.ApplicationIdle);
                 }
                 catch (InvalidOperationException)
                 {
                     // Already closed.
+                    if (suppressFinalFocusRestore)
+                    {
+                        suppressFinalFocusRestoreWindows.Remove(window);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1576,6 +1652,10 @@ namespace AnikiHelper.Services
                     }
                     catch
                     {
+                        if (suppressFinalFocusRestore)
+                        {
+                            suppressFinalFocusRestoreWindows.Remove(window);
+                        }
                     }
                 }
             }
@@ -1588,7 +1668,7 @@ namespace AnikiHelper.Services
             if (window == null)
                 return;
 
-            logger?.Debug(
+            global::AnikiHelper.AnikiLog.Debug(logger, 
                 $"[AnikiHelper][WindowManager] Removing window from tracking. {DescribeWindow(window)}, " +
                 $"StackCountBefore={windows.Count}");
 
@@ -1608,7 +1688,7 @@ namespace AnikiHelper.Services
                 foreach (var item in rebuilt)
                     windows.Push(item);
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Window tracking updated. Removed={window.Tag as string ?? "<no tag>"}, " +
                     $"StackCountAfter={windows.Count}, NewTop={DescribeTrackedWindow(windows.Any() ? windows.Peek() : null)}");
             }
@@ -1616,7 +1696,7 @@ namespace AnikiHelper.Services
             {
                 // CloseTopWindow removes the entry before calling Close(). The Closed event still has to
                 // perform the final Playnite restoration; returning here was the Alt+F4 regression.
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Closed window was already popped from tracking. " +
                     $"StackCount={windows.Count}, Window={DescribeWindow(window)}");
             }
@@ -1627,7 +1707,7 @@ namespace AnikiHelper.Services
             {
                 if (suppressFinalFocusRestore)
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         $"[AnikiHelper][WindowManager] Final Playnite focus restoration suppressed for external handoff. " +
                         $"Window={DescribeWindow(window)}");
                 }
@@ -1651,7 +1731,7 @@ namespace AnikiHelper.Services
             {
                 try
                 {
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         $"[AnikiHelper][WindowManager] Final window fully closed; restoring Playnite foreground. " +
                         $"Target={DescribeWindow(playniteWindow)}");
 
@@ -1669,7 +1749,7 @@ namespace AnikiHelper.Services
                         SetForegroundWindow(handle);
                     }
 
-                    logger?.Debug(
+                    global::AnikiHelper.AnikiLog.Debug(logger, 
                         $"[AnikiHelper][WindowManager] Playnite foreground restoration completed. " +
                         $"Target={DescribeWindow(playniteWindow)}, KeyboardFocus={DescribeFocusedElement()}");
                 }
@@ -1728,7 +1808,7 @@ namespace AnikiHelper.Services
             catch (Exception ex)
             {
                 // Informational state only: never prevent a window from opening.
-                logger?.Debug(ex, "[AnikiHelper][WindowManager] Failed to publish pre-show window state.");
+                global::AnikiHelper.AnikiLog.Debug(logger, ex, "[AnikiHelper][WindowManager] Failed to publish pre-show window state.");
             }
         }
 
@@ -1767,7 +1847,7 @@ namespace AnikiHelper.Services
 
             if (owner != null && owner.IsVisible)
             {
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Restoring focus to the actual owner of the closing window. " +
                     $"Closing={DescribeTrackedWindow(closingEntry)}, Owner={DescribeWindow(owner)}");
 
@@ -1788,7 +1868,7 @@ namespace AnikiHelper.Services
                 var topEntry = windows.Peek();
                 var top = topEntry.Window;
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] Restoring focus to top tracked window. {DescribeTrackedWindow(topEntry)}, " +
                     $"StackCount={windows.Count}");
 
@@ -1799,7 +1879,7 @@ namespace AnikiHelper.Services
             {
                 var playniteWindow = playniteApi.Dialogs.GetCurrentAppWindow();
 
-                logger?.Debug(
+                global::AnikiHelper.AnikiLog.Debug(logger, 
                     $"[AnikiHelper][WindowManager] No tracked parent remains; returning focus to Playnite. " +
                     $"PlayniteWindow={DescribeWindow(playniteWindow)}");
 
