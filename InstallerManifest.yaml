@@ -383,7 +383,7 @@ Packages:
       - Added Aniki Video Center, a new integrated media library and video player for local and network/NAS media, metadata and artwork, Continue Watching, favorites, playback progress, automatic TMDB movie collections, audio and subtitle options, FFmpeg/FFprobe media analysis and thumbnails, and intro/outro detection for Skip Intro and Play Next, including community timing data when available.
       - Added a Reset Settings button to restore all Aniki Helper settings to their defaults.
       - Added support for the Turkish Steam Store region.
-      - Migrated controller button handling to Playnite's native controller API, with SDL now limited to the minimum required for analog input.
+      - Migrated controller button handling to Playnites native controller API, with SDL now limited to the minimum required for analog input.
       - Improved the In-Game Overlay system.
       - Changed the Overlay controller shortcut so it opens the Extra menu when no game is running and the In-Game Overlay when a game is running.
       - Improved game launch detection for the Splash Screen. Aniki Helper can now detect when the actual game window is ready before closing the Splash Screen, while the configured minimum timer still takes priority. Thanks to VirtualGamer20 for his contribution.
@@ -391,3 +391,17 @@ Packages:
       - Fixed controller navigation between favorites on the Web Browser Home page.
       - Fixed an issue where music could continue playing while watching captured videos.
       - Fixed an issue that could cause controller input to stop responding after closing a game.
+  - Version: 1.6.5
+    RequiredApiVersion: 6.16.0
+    ReleaseDate: 2026-09-06
+    PackageUrl: https://github.com/Mike-Aniki/AnikiHelper/releases/download/v1.6.5/AnikiHelper_96a983a3-3f13-4dce-a474-4052b718bb52_1_6_5.pext
+    Changelog:
+      - Added a new Aniki Packs section, with a dedicated menu for each pack type.
+      - Added the Aniki Community Packs system, allowing users to browse, download, and import community creations directly from Aniki Helper.
+      - Added an on-demand download system for login background videos.
+      - Added Polish, German, Italian, Portuguese, Bulgarian, Czech, Greek, Russian, and Turkish localizations.
+      - Added Mexico / MXN as a Steam Store region.
+      - Updated the style of the text card displayed on the screensaver.
+      - Added 30-second and 45-second delay options for screensaver activation.
+      - Added an option allowing the screensaver to play either dedicated ambient music or the currently selected Music track from the theme via UniPlaySong.
+      - Various fixes and optimizations.
