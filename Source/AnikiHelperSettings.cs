@@ -32,9 +32,16 @@ using AnikiHelper.Services.DuplicateHider;
 using AnikiHelper.Services.FirstSetup;
 using AnikiHelper.Services.WebBrowser;
 using AnikiHelper.Services.VideoPlayer;
+using AnikiHelper.Services.ColorPacks;
+using AnikiHelper.Services.CommunityPacks;
+using AnikiHelper.Services.CompletePacks;
+using AnikiHelper.Services.LoginPacks;
+using AnikiHelper.Services.SoundPacks;
+using AnikiHelper.Services.VisualPacks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 
 namespace AnikiHelper
@@ -686,7 +693,7 @@ namespace AnikiHelper
 
     public partial class AnikiHelperSettings : ObservableObject, ISettings, System.ComponentModel.INotifyPropertyChanged
     {
-        private const int CurrentHubShortcutsDefaultsVersion = 1;
+        private const int CurrentHubShortcutsDefaultsVersion = 2;
 
         private const string HubFeatureWebBrowserId = "builtin:web-browser";
         private const string HubFeatureMediaGalleryId = "builtin:media-gallery";
@@ -1879,7 +1886,16 @@ namespace AnikiHelper
         public RelayCommand OpenQuickAccessAudioSwitcherCommand { get; }
 
         [DontSerialize]
+        public RelayCommand OpenPackCreatorDownloadPageCommand { get; }
+
+        [DontSerialize]
         public RelayCommand OpenQuickAccessUniPlaySongCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand OpenQuickAccessExtraFromTopBarManagerCommand { get; }
+
+        [DontSerialize]
+        public RelayCommand<object> OpenTopBarFeatureCommand { get; }
 
         [DontSerialize]
         public AnikiWindowCommandProvider OpenChildWindow { get; }
@@ -3610,7 +3626,7 @@ namespace AnikiHelper
             }
         }
 
-        private string hubAppSlot4ToolName = HubFeatureSteamStoreId;
+        private string hubAppSlot4ToolName = HubFeatureVideoPlayerId;
         public string HubAppSlot4ToolName
         {
             get => hubAppSlot4ToolName;
@@ -3668,6 +3684,13 @@ namespace AnikiHelper
         // Tracks the one-time migration that enables the redesigned Features & Apps page
         // only when the previous Hub Apps configuration was still untouched.
         public int HubShortcutsDefaultsVersion { get; set; }
+
+        private string visualPackCreatorPath = string.Empty;
+        public string VisualPackCreatorPath
+        {
+            get => visualPackCreatorPath;
+            set => SetValue(ref visualPackCreatorPath, string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim());
+        }
 
         private string customFilterIconsFolder = string.Empty;
         public string CustomFilterIconsFolder
@@ -5450,9 +5473,11 @@ namespace AnikiHelper
         }
 
         private ObservableCollection<SteamStoreItem> steamStoreDeals = new ObservableCollection<SteamStoreItem>();
+        private ObservableCollection<SteamStoreItem> steamStoreDealsHub = new ObservableCollection<SteamStoreItem>();
         private ObservableCollection<SteamStoreItem> steamStoreNewReleases = new ObservableCollection<SteamStoreItem>();
         private ObservableCollection<SteamStoreItem> steamStoreTopSellers = new ObservableCollection<SteamStoreItem>();
         private ObservableCollection<SteamStoreItem> steamStoreUpcoming = new ObservableCollection<SteamStoreItem>();
+        private ObservableCollection<SteamStoreItem> steamStoreUpcomingHub = new ObservableCollection<SteamStoreItem>();
         private ObservableCollection<SteamStoreItem> steamStoreWishlisted = new ObservableCollection<SteamStoreItem>();
         private ObservableCollection<SteamStoreItem> steamStoreMyWishlist = new ObservableCollection<SteamStoreItem>();
         private ObservableCollection<SteamStoreItem> steamStoreRecommended = new ObservableCollection<SteamStoreItem>();
@@ -5610,6 +5635,16 @@ namespace AnikiHelper
             set => SetValue(ref steamStoreDeals, value);
         }
 
+        // Hub-only projection. Kept to four items so the Hub ItemsControl never
+        // creates containers for the rest of the full Store collection.
+        // HubCurrentPage already requests Store loading, so this getter stays side-effect free.
+        [DontSerialize]
+        public ObservableCollection<SteamStoreItem> SteamStoreDealsHub
+        {
+            get => steamStoreDealsHub;
+            set => SetValue(ref steamStoreDealsHub, value);
+        }
+
         [DontSerialize]
         public ObservableCollection<SteamStoreItem> SteamStoreNewReleases
         {
@@ -5642,6 +5677,24 @@ namespace AnikiHelper
                 return steamStoreUpcoming;
             }
             set => SetValue(ref steamStoreUpcoming, value);
+        }
+
+        // Hub-only projection. The full Store keeps its normal 24-item collection.
+        [DontSerialize]
+        public ObservableCollection<SteamStoreItem> SteamStoreUpcomingHub
+        {
+            get => steamStoreUpcomingHub;
+            set => SetValue(ref steamStoreUpcomingHub, value);
+        }
+
+        internal bool IsSteamStoreDealsCollection(ObservableCollection<SteamStoreItem> collection)
+        {
+            return ReferenceEquals(collection, steamStoreDeals);
+        }
+
+        internal bool IsSteamStoreUpcomingCollection(ObservableCollection<SteamStoreItem> collection)
+        {
+            return ReferenceEquals(collection, steamStoreUpcoming);
         }
 
         [DontSerialize]
@@ -5912,7 +5965,16 @@ namespace AnikiHelper
         public int ScreenSaverIdleDelayMinutes
         {
             get => screenSaverIdleDelayMinutes;
-            set => SetValue(ref screenSaverIdleDelayMinutes, Math.Max(1, Math.Min(120, value)));
+            set
+            {
+                // Keep positive values as minutes for backward compatibility.
+                // Negative values are reserved for the sub-minute ScreenSaver presets.
+                var normalizedValue = value == -30 || value == -45
+                    ? value
+                    : Math.Max(1, Math.Min(120, value));
+
+                SetValue(ref screenSaverIdleDelayMinutes, normalizedValue);
+            }
         }
 
         private int screenSaverChangeIntervalSeconds = 15;
@@ -5935,6 +5997,45 @@ namespace AnikiHelper
             get => screenSaverUseSplashImages;
             set => SetValue(ref screenSaverUseSplashImages, value);
         }
+
+        private bool screenSaverAmbientMusicEnabled = true;
+        public bool ScreenSaverAmbientMusicEnabled
+        {
+            get => screenSaverAmbientMusicEnabled;
+            set
+            {
+                if (screenSaverAmbientMusicEnabled == value)
+                {
+                    return;
+                }
+
+                SetValue(ref screenSaverAmbientMusicEnabled, value);
+                OnPropertyChanged(nameof(IsScreenSaverAmbientMusicActive));
+            }
+        }
+
+        [DontSerialize]
+        private bool isScreenSaverActive;
+
+        [DontSerialize]
+        public bool IsScreenSaverActive
+        {
+            get => isScreenSaverActive;
+            set
+            {
+                if (isScreenSaverActive == value)
+                {
+                    return;
+                }
+
+                SetValue(ref isScreenSaverActive, value);
+                OnPropertyChanged(nameof(IsScreenSaverAmbientMusicActive));
+            }
+        }
+
+        [DontSerialize]
+        public bool IsScreenSaverAmbientMusicActive =>
+            IsScreenSaverActive && ScreenSaverAmbientMusicEnabled;
 
         private bool screenSaverShowLogo = true;
         public bool ScreenSaverShowLogo
@@ -6872,8 +6973,158 @@ namespace AnikiHelper
                     OnPropertyChanged(nameof(IsLuckyDay));
                     OnPropertyChanged(nameof(IsLuckyStyle1));
                     OnPropertyChanged(nameof(IsLuckyStyle2));
+                    NotifySoundPackRuntimePathProperties();
                 }
             }
+        }
+
+        [DontSerialize]
+        private string activeLoginPackVideoPath = string.Empty;
+
+        [DontSerialize]
+        public string ActiveLoginPackVideoPath
+        {
+            get => activeLoginPackVideoPath;
+            set => SetValue(ref activeLoginPackVideoPath, value ?? string.Empty);
+        }
+
+        [DontSerialize]
+        private string soundPackDefaultAudioRoot = string.Empty;
+        [DontSerialize]
+        public string SoundPackDefaultAudioRoot
+        {
+            get => soundPackDefaultAudioRoot;
+            set
+            {
+                var normalized = value ?? string.Empty;
+                if (!string.Equals(soundPackDefaultAudioRoot, normalized, StringComparison.Ordinal))
+                {
+                    SetValue(ref soundPackDefaultAudioRoot, normalized);
+                    NotifySoundPackRuntimePathProperties();
+                }
+            }
+        }
+
+        [DontSerialize]
+        private string soundPackLuckyAudioRoot = string.Empty;
+        [DontSerialize]
+        public string SoundPackLuckyAudioRoot
+        {
+            get => soundPackLuckyAudioRoot;
+            set
+            {
+                var normalized = value ?? string.Empty;
+                if (!string.Equals(soundPackLuckyAudioRoot, normalized, StringComparison.Ordinal))
+                {
+                    SetValue(ref soundPackLuckyAudioRoot, normalized);
+                    NotifySoundPackRuntimePathProperties();
+                }
+            }
+        }
+
+        [DontSerialize]
+        private string soundPackNotiPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackNotiPath { get => ResolveSoundPackRuntimePath(soundPackNotiPath, "Noti.wav", true); set => SetValue(ref soundPackNotiPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackEnterGameDetailsPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackEnterGameDetailsPath { get => ResolveSoundPackRuntimePath(soundPackEnterGameDetailsPath, "EnterGameDetails.wav"); set => SetValue(ref soundPackEnterGameDetailsPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackExitGameDetailsPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackExitGameDetailsPath { get => ResolveSoundPackRuntimePath(soundPackExitGameDetailsPath, "ExitGameDetails.wav"); set => SetValue(ref soundPackExitGameDetailsPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackOpenAdditionalViewPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackOpenAdditionalViewPath { get => ResolveSoundPackRuntimePath(soundPackOpenAdditionalViewPath, "OpenAdditionalView.wav"); set => SetValue(ref soundPackOpenAdditionalViewPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackChangeDisplayPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackChangeDisplayPath { get => ResolveSoundPackRuntimePath(soundPackChangeDisplayPath, "ChangeDisplay.wav"); set => SetValue(ref soundPackChangeDisplayPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackHomeHubClosePath = string.Empty;
+        [DontSerialize]
+        public string SoundPackHomeHubClosePath { get => ResolveSoundPackRuntimePath(soundPackHomeHubClosePath, "HomeHubClose.wav"); set => SetValue(ref soundPackHomeHubClosePath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackSessionSummaryPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackSessionSummaryPath { get => ResolveSoundPackRuntimePath(soundPackSessionSummaryPath, "SessionSummary.wav"); set => SetValue(ref soundPackSessionSummaryPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackWarningPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackWarningPath { get => ResolveSoundPackRuntimePath(soundPackWarningPath, "Warning.wav"); set => SetValue(ref soundPackWarningPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackLoginOstPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackLoginOstPath { get => ResolveSoundPackRuntimePath(soundPackLoginOstPath, "LoginOST.mp3"); set => SetValue(ref soundPackLoginOstPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackHubOstPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackHubOstPath { get => ResolveSoundPackRuntimePath(soundPackHubOstPath, "HubOST.mp3"); set => SetValue(ref soundPackHubOstPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackSecondaryViewsOstPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackSecondaryViewsOstPath { get => ResolveSoundPackRuntimePath(soundPackSecondaryViewsOstPath, "SecondaryViewsOST.mp3"); set => SetValue(ref soundPackSecondaryViewsOstPath, value ?? string.Empty); }
+
+        [DontSerialize]
+        private string soundPackScreenSaverOstPath = string.Empty;
+        [DontSerialize]
+        public string SoundPackScreenSaverOstPath { get => ResolveSoundPackRuntimePath(soundPackScreenSaverOstPath, "ScreenSaverOST.mp3"); set => SetValue(ref soundPackScreenSaverOstPath, value ?? string.Empty); }
+
+        private string ResolveSoundPackRuntimePath(string activePath, string defaultFileName, bool useLuckyNotification = false)
+        {
+            if (!IsLuckyDay)
+            {
+                return activePath ?? string.Empty;
+            }
+
+            if (useLuckyNotification && !string.IsNullOrWhiteSpace(soundPackLuckyAudioRoot))
+            {
+                var luckyFileName = LuckyStyleIndex == 2 ? "Noti2.wav" : "Noti.wav";
+                var luckyPath = Path.Combine(soundPackLuckyAudioRoot, luckyFileName);
+                if (File.Exists(luckyPath))
+                {
+                    return luckyPath;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(soundPackDefaultAudioRoot))
+            {
+                var defaultPath = Path.Combine(soundPackDefaultAudioRoot, defaultFileName);
+                if (File.Exists(defaultPath))
+                {
+                    return defaultPath;
+                }
+            }
+
+            return activePath ?? string.Empty;
+        }
+
+        private void NotifySoundPackRuntimePathProperties()
+        {
+            OnPropertyChanged(nameof(SoundPackNotiPath));
+            OnPropertyChanged(nameof(SoundPackEnterGameDetailsPath));
+            OnPropertyChanged(nameof(SoundPackExitGameDetailsPath));
+            OnPropertyChanged(nameof(SoundPackOpenAdditionalViewPath));
+            OnPropertyChanged(nameof(SoundPackChangeDisplayPath));
+            OnPropertyChanged(nameof(SoundPackHomeHubClosePath));
+            OnPropertyChanged(nameof(SoundPackSessionSummaryPath));
+            OnPropertyChanged(nameof(SoundPackWarningPath));
+            OnPropertyChanged(nameof(SoundPackLoginOstPath));
+            OnPropertyChanged(nameof(SoundPackHubOstPath));
+            OnPropertyChanged(nameof(SoundPackSecondaryViewsOstPath));
+            OnPropertyChanged(nameof(SoundPackScreenSaverOstPath));
         }
 
         [DontSerialize]
@@ -6890,15 +7141,16 @@ namespace AnikiHelper
                     SetValue(ref luckyStyleIndex, value);
                     OnPropertyChanged(nameof(IsLuckyStyle1));
                     OnPropertyChanged(nameof(IsLuckyStyle2));
+                    NotifySoundPackRuntimePathProperties();
                 }
             }
         }
 
         [DontSerialize]
-        public bool IsLuckyStyle1 => IsLuckyDay && LuckyStyleIndex == 1;
+        public bool IsLuckyStyle1 => LoginRandomIndex == 42 && LuckyStyleIndex == 1;
 
         [DontSerialize]
-        public bool IsLuckyStyle2 => IsLuckyDay && LuckyStyleIndex == 2;
+        public bool IsLuckyStyle2 => LoginRandomIndex == 42 && LuckyStyleIndex == 2;
 
         [DontSerialize]
         private bool isKonamiEasterEggActive;
@@ -7399,6 +7651,7 @@ namespace AnikiHelper
                 NotifyOnGameStart = saved.NotifyOnGameStart;
                 NotifyOnConnect = saved.NotifyOnConnect;
 
+                VisualPackCreatorPath = saved.VisualPackCreatorPath ?? string.Empty;
                 CustomFilterIconsFolder = saved.CustomFilterIconsFolder ?? string.Empty;
                 CustomFilterBackgroundsFolder = saved.CustomFilterBackgroundsFolder ?? string.Empty;
                 CustomSourceIconsFolder = saved.CustomSourceIconsFolder ?? string.Empty;
@@ -7471,12 +7724,13 @@ namespace AnikiHelper
                 SteamUpdatesScanEnabled = saved.SteamUpdatesScanEnabled;
                 AskSteamUpdateCacheAtStartup = saved.AskSteamUpdateCacheAtStartup;
                 StartupIntroVideoEnabled = saved.StartupIntroVideoEnabled;
-                var hasSavedScreenSaverSettings = saved.ScreenSaverIdleDelayMinutes > 0;
+                var hasSavedScreenSaverSettings = saved.ScreenSaverIdleDelayMinutes != 0;
                 ScreenSaverEnabled = hasSavedScreenSaverSettings ? saved.ScreenSaverEnabled : true;
                 ScreenSaverIdleDelayMinutes = hasSavedScreenSaverSettings ? saved.ScreenSaverIdleDelayMinutes : 1;
                 ScreenSaverChangeIntervalSeconds = saved.ScreenSaverChangeIntervalSeconds > 0 ? saved.ScreenSaverChangeIntervalSeconds : 15;
                 ScreenSaverSource = hasSavedScreenSaverSettings ? saved.ScreenSaverSource : global::AnikiHelper.Services.ScreenSaver.ScreenSaverSource.InstalledGames;
                 ScreenSaverUseSplashImages = hasSavedScreenSaverSettings ? saved.ScreenSaverUseSplashImages : true;
+                ScreenSaverAmbientMusicEnabled = hasSavedScreenSaverSettings ? saved.ScreenSaverAmbientMusicEnabled : true;
                 ScreenSaverShowLogo = hasSavedScreenSaverSettings ? saved.ScreenSaverShowLogo : true;
                 ScreenSaverShowInfoCard = hasSavedScreenSaverSettings ? saved.ScreenSaverShowInfoCard : true;
                 ScreenSaverAnimateBackground = hasSavedScreenSaverSettings ? saved.ScreenSaverAnimateBackground : true;
@@ -7665,13 +7919,26 @@ namespace AnikiHelper
                     string.IsNullOrWhiteSpace(saved.HubAppSlot3BackgroundPath) &&
                     string.IsNullOrWhiteSpace(saved.HubAppSlot4BackgroundPath);
 
-                if (previousConfigurationWasUntouched)
+                // Version 2 replaces Steam Store with Aniki Media Center in the default Hub cards.
+                // Migrate only the exact previous default layout so user customizations are preserved.
+                var previousConfigurationWasDefaultLayout =
+                    saved.HubAppsEnabled &&
+                    string.Equals(saved.HubAppSlot1ToolName, HubFeatureWebBrowserId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(saved.HubAppSlot2ToolName, HubFeatureMediaGalleryId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(saved.HubAppSlot3ToolName, HubFeatureSteamFriendsId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(saved.HubAppSlot4ToolName, HubFeatureSteamStoreId, StringComparison.OrdinalIgnoreCase) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot1BackgroundPath) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot2BackgroundPath) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot3BackgroundPath) &&
+                    string.IsNullOrWhiteSpace(saved.HubAppSlot4BackgroundPath);
+
+                if (previousConfigurationWasUntouched || previousConfigurationWasDefaultLayout)
                 {
                     HubAppsEnabled = true;
                     HubAppSlot1ToolName = HubFeatureWebBrowserId;
                     HubAppSlot2ToolName = HubFeatureMediaGalleryId;
                     HubAppSlot3ToolName = HubFeatureSteamFriendsId;
-                    HubAppSlot4ToolName = HubFeatureSteamStoreId;
+                    HubAppSlot4ToolName = HubFeatureVideoPlayerId;
                     hubShortcutsDefaultsMigrationApplied = true;
                 }
 
@@ -7898,10 +8165,34 @@ namespace AnikiHelper
                 IsQuickAccessFeaturesOpen = false;
             });
 
+            OpenPackCreatorDownloadPageCommand = new RelayCommand(() =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "https://github.com/Mike-Aniki/AnikiPackCreator/releases/latest",
+                        UseShellExecute = true
+                    });
+                    IsQuickAccessFeaturesOpen = false;
+                }
+                catch (Exception ex)
+                {
+                    logger?.Warn(ex, "[AnikiHelper] Failed to open the Aniki Pack Creator release page.");
+                }
+            });
+
             OpenQuickAccessUniPlaySongCommand = new RelayCommand(() =>
             {
                 plugin?.OpenChildWindow("UniPlaySongWindowStyle|FocusFirst|NoDim");
                 IsQuickAccessFeaturesOpen = false;
+            });
+
+            OpenQuickAccessExtraFromTopBarManagerCommand = new RelayCommand(() => plugin?.OpenQuickAccessExtraFromTopBarManager());
+
+            OpenTopBarFeatureCommand = new RelayCommand<object>(featureId =>
+            {
+                OpenTopBarFeature(featureId?.ToString());
             });
 
             OpenChildWindow = new AnikiWindowCommandProvider(
@@ -9426,10 +9717,10 @@ namespace AnikiHelper
             {
                 return new AnikiOverlayAppItem
                 {
-                    Name = Loc("HubFeature_VideoPlayer", "Aniki Video Center"),
+                    Name = Loc("HubFeature_VideoPlayer", "Aniki Media Center"),
                     ActionId = HubFeatureVideoPlayerId,
-                    IconPath = ResolveActiveThemeFeatureAssetPath("VideoPlayer_Icon.png"),
-                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("VideoPlayer_Background.png")
+                    IconPath = ResolveActiveThemeFeatureAssetPath("AnikiMediaCenter_Icon.png"),
+                    BackgroundImagePath = ResolveActiveThemeFeatureAssetPath("AnikiMediaCenter_Background.png")
                 };
             }
 
@@ -10309,6 +10600,72 @@ namespace AnikiHelper
 
             IsQuickAccessFeaturesOpen = false;
             plugin?.FocusQuickAccessElement("QuickFeaturesButton");
+        }
+
+        private void OpenTopBarFeature(string featureId)
+        {
+            if (string.IsNullOrWhiteSpace(featureId))
+            {
+                return;
+            }
+
+            Action openDestination = null;
+
+            switch (featureId.Trim().ToLowerInvariant())
+            {
+                case "achievements":
+                    openDestination = () => plugin?.OpenWindow("AchievementsWindow|SortButton|SecondaryMusic");
+                    break;
+
+                case "friends":
+                    openDestination = () => plugin?.OpenWindow("FriendsStyle|SecondaryMusic");
+                    break;
+
+                case "music-player":
+                    openDestination = () => plugin?.OpenWindow("MusicPlayerWindowStyle|FocusFirst");
+                    break;
+
+                case "web-browser":
+                    openDestination = () => plugin?.OpenWebBrowserHome();
+                    break;
+
+                case "media-gallery":
+                    openDestination = () =>
+                    {
+                        LoadMediaGalleryGamesFromCache();
+                        plugin?.OpenWindow("MediaGalleryGamesWindowStyle|SecondaryMusic");
+                    };
+                    break;
+
+                case "video-player":
+                    openDestination = () => plugin?.OpenVideoPlayer();
+                    break;
+
+                case "software-tools":
+                    openDestination = () =>
+                    {
+                        LoadOverlayApps();
+                        plugin?.OpenChildWindow("AppsWindowStyle|FocusFirst|NoDim");
+                    };
+                    break;
+
+                case "audio-switcher":
+                    openDestination = () =>
+                        plugin?.OpenChildWindow("AudioSwitcherWindowStyle|FocusFirst|RefocusAfterClick");
+                    break;
+
+                case "controller-manager":
+                    openDestination = () =>
+                        plugin?.OpenWindow("ControllerManagerWindowStyle|ControllerManagerTesterButton");
+                    break;
+            }
+
+            if (openDestination == null)
+            {
+                return;
+            }
+
+            plugin?.OpenAfterTopBarManagerClosed(openDestination);
         }
 
         private void OpenQuickAccessFeature(string actionId)
@@ -11987,6 +12344,7 @@ public bool IsInGameOverlaySuspendGameEnabled()
             nameof(NewsSourceAUrl),
             nameof(NewsSourceBUrl),
 
+            nameof(VisualPackCreatorPath),
             nameof(CustomFilterIconsFolder),
             nameof(CustomFilterBackgroundsFolder),
             nameof(CustomSourceIconsFolder),
@@ -12045,6 +12403,7 @@ public bool IsInGameOverlaySuspendGameEnabled()
             nameof(ScreenSaverChangeIntervalSeconds),
             nameof(ScreenSaverSource),
             nameof(ScreenSaverUseSplashImages),
+            nameof(ScreenSaverAmbientMusicEnabled),
             nameof(ScreenSaverShowLogo),
             nameof(ScreenSaverShowInfoCard),
             nameof(ScreenSaverAnimateBackground),
@@ -12640,6 +12999,72 @@ public bool IsInGameOverlaySuspendGameEnabled()
 
 
 
+    public sealed class VisualPackLibraryViewItem
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Author { get; set; }
+        public string SizeText { get; set; }
+        public ImageSource PreviewImage { get; set; }
+        public bool IsActive { get; set; }
+        public bool CanApply => !IsActive;
+        public bool CanDelete => true;
+    }
+
+    public sealed class ColorPackLibraryViewItem
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Author { get; set; }
+        public string Version { get; set; }
+        public string Description { get; set; }
+        public string SizeText { get; set; }
+        public ImageSource PreviewImage { get; set; }
+        public bool IsActive { get; set; }
+        public bool CanDelete => true;
+    }
+
+    public sealed class LoginPackLibraryViewItem
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Author { get; set; }
+        public string Version { get; set; }
+        public string Description { get; set; }
+        public string SizeText { get; set; }
+        public ImageSource PreviewImage { get; set; }
+        public bool IsActive { get; set; }
+        public bool CanDelete => true;
+    }
+
+    public sealed class SoundPackLibraryViewItem
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Author { get; set; }
+        public string Version { get; set; }
+        public string Description { get; set; }
+        public string SizeText { get; set; }
+        public ImageSource PreviewImage { get; set; }
+        public bool IsActive { get; set; }
+        public bool CanDelete => true;
+    }
+
+    public sealed class CompletePackLibraryViewItem
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Author { get; set; }
+        public string Version { get; set; }
+        public string Description { get; set; }
+        public string SizeText { get; set; }
+        public ImageSource PreviewImage { get; set; }
+        public string ComponentsText { get; set; }
+        public bool IsActive { get; set; }
+        public bool CanApply => !IsActive;
+        public bool CanDelete => true;
+    }
+
     public class AnikiHelperSettingsViewModel : ObservableObject, ISettings
     {
         public AnikiHelperSettings Settings { get; set; }
@@ -12647,6 +13072,485 @@ public bool IsInGameOverlaySuspendGameEnabled()
         private readonly DispatcherTimer saveDebounceTimer;
 
         public IPlayniteAPI Api => plugin?.PlayniteApi;
+
+        public ObservableCollection<VisualPackLibraryViewItem> VisualPackLibraryPacks { get; } =
+            new ObservableCollection<VisualPackLibraryViewItem>();
+
+        public ObservableCollection<ColorPackLibraryViewItem> ColorPackLibraryPacks { get; } =
+            new ObservableCollection<ColorPackLibraryViewItem>();
+
+        public ObservableCollection<LoginPackLibraryViewItem> LoginPackLibraryPacks { get; } =
+            new ObservableCollection<LoginPackLibraryViewItem>();
+
+        public ObservableCollection<SoundPackLibraryViewItem> SoundPackLibraryPacks { get; } =
+            new ObservableCollection<SoundPackLibraryViewItem>();
+
+        public ObservableCollection<CompletePackLibraryViewItem> CompletePackLibraryPacks { get; } =
+            new ObservableCollection<CompletePackLibraryViewItem>();
+
+        private string completePackLibraryCountText = "0 / 20";
+        public string CompletePackLibraryCountText
+        {
+            get => completePackLibraryCountText;
+            private set => SetValue(ref completePackLibraryCountText, value ?? string.Empty);
+        }
+
+        private bool completePackLibraryCanImport = true;
+        public bool CompletePackLibraryCanImport
+        {
+            get => completePackLibraryCanImport;
+            private set => SetValue(ref completePackLibraryCanImport, value);
+        }
+
+        private bool completePackLibraryIsEmpty = true;
+        public bool CompletePackLibraryIsEmpty
+        {
+            get => completePackLibraryIsEmpty;
+            private set => SetValue(ref completePackLibraryIsEmpty, value);
+        }
+
+        private string soundPackLibraryCountText = "0 / 20";
+        public string SoundPackLibraryCountText
+        {
+            get => soundPackLibraryCountText;
+            private set => SetValue(ref soundPackLibraryCountText, value ?? string.Empty);
+        }
+
+        private bool soundPackLibraryCanImport = true;
+        public bool SoundPackLibraryCanImport
+        {
+            get => soundPackLibraryCanImport;
+            private set => SetValue(ref soundPackLibraryCanImport, value);
+        }
+
+        private bool soundPackLibraryIsEmpty = true;
+        public bool SoundPackLibraryIsEmpty
+        {
+            get => soundPackLibraryIsEmpty;
+            private set => SetValue(ref soundPackLibraryIsEmpty, value);
+        }
+
+        private string loginPackLibraryCountText = "0 / 20";
+        public string LoginPackLibraryCountText
+        {
+            get => loginPackLibraryCountText;
+            private set => SetValue(ref loginPackLibraryCountText, value ?? string.Empty);
+        }
+
+        private bool loginPackLibraryCanImport = true;
+        public bool LoginPackLibraryCanImport
+        {
+            get => loginPackLibraryCanImport;
+            private set => SetValue(ref loginPackLibraryCanImport, value);
+        }
+
+        private bool loginPackLibraryIsEmpty = true;
+        public bool LoginPackLibraryIsEmpty
+        {
+            get => loginPackLibraryIsEmpty;
+            private set => SetValue(ref loginPackLibraryIsEmpty, value);
+        }
+
+        private string colorPackLibraryCountText = "0 / 20";
+        public string ColorPackLibraryCountText
+        {
+            get => colorPackLibraryCountText;
+            private set => SetValue(ref colorPackLibraryCountText, value ?? string.Empty);
+        }
+
+        private bool colorPackLibraryCanImport = true;
+        public bool ColorPackLibraryCanImport
+        {
+            get => colorPackLibraryCanImport;
+            private set => SetValue(ref colorPackLibraryCanImport, value);
+        }
+
+        private bool colorPackLibraryIsEmpty = true;
+        public bool ColorPackLibraryIsEmpty
+        {
+            get => colorPackLibraryIsEmpty;
+            private set => SetValue(ref colorPackLibraryIsEmpty, value);
+        }
+
+        private string visualPackLibraryCountText = "0 / 20";
+        public string VisualPackLibraryCountText
+        {
+            get => visualPackLibraryCountText;
+            private set => SetValue(ref visualPackLibraryCountText, value ?? string.Empty);
+        }
+
+        private bool visualPackLibraryCanImport = true;
+        public bool VisualPackLibraryCanImport
+        {
+            get => visualPackLibraryCanImport;
+            private set => SetValue(ref visualPackLibraryCanImport, value);
+        }
+
+        private bool visualPackLibraryIsEmpty = true;
+        public bool VisualPackLibraryIsEmpty
+        {
+            get => visualPackLibraryIsEmpty;
+            private set => SetValue(ref visualPackLibraryIsEmpty, value);
+        }
+
+        public string DownloadedLoginVideosStatusText
+        {
+            get
+            {
+                var empty = Loc(
+                    "DownloadedLoginVideos_StatusEmpty",
+                    "No downloaded login backgrounds.");
+                var format = Loc(
+                    "DownloadedLoginVideos_StatusFormat",
+                    "{0} downloaded background(s) · {1}");
+
+                var count = plugin?.GetDownloadedLoginBackgroundVideosCount() ?? 0;
+                var sizeBytes = plugin?.GetDownloadedLoginBackgroundVideosSizeBytes() ?? 0L;
+                if (count <= 0 || sizeBytes <= 0)
+                {
+                    return empty;
+                }
+
+                return string.Format(format, count, global::AnikiHelper.Services.AnikiThemeSettings.LoginBackgroundMediaService.FormatBytes(sizeBytes));
+            }
+        }
+
+        public bool HasDownloadedLoginVideos
+        {
+            get
+            {
+                var count = plugin?.GetDownloadedLoginBackgroundVideosCount() ?? 0;
+                var sizeBytes = plugin?.GetDownloadedLoginBackgroundVideosSizeBytes() ?? 0L;
+                return count > 0 && sizeBytes > 0;
+            }
+        }
+
+        public void RefreshLoginBackgroundMediaState()
+        {
+            OnPropertyChanged(nameof(DownloadedLoginVideosStatusText));
+            OnPropertyChanged(nameof(HasDownloadedLoginVideos));
+        }
+
+        public void ClearDownloadedLoginBackgroundVideos()
+        {
+            plugin?.ClearDownloadedLoginBackgroundVideos();
+            RefreshLoginBackgroundMediaState();
+        }
+
+        public string GetLoginBackgroundMediaLibraryFolder()
+        {
+            return plugin?.GetLoginBackgroundMediaLibraryFolder() ?? string.Empty;
+        }
+
+        public bool VisualPackCreatorAvailable
+        {
+            get
+            {
+                var path = Settings?.VisualPackCreatorPath;
+                return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+            }
+        }
+
+        public string VisualPackCreatorPathDisplay
+        {
+            get
+            {
+                var path = Settings?.VisualPackCreatorPath;
+                return string.IsNullOrWhiteSpace(path)
+                    ? Loc("VisualPackCreator_NotConfigured", "Not configured")
+                    : path;
+            }
+        }
+
+        public void RefreshVisualPackCreatorState()
+        {
+            OnPropertyChanged(nameof(VisualPackCreatorAvailable));
+            OnPropertyChanged(nameof(VisualPackCreatorPathDisplay));
+        }
+
+        public void RefreshCustomVisualPackLibrary()
+        {
+            try
+            {
+                var snapshot = plugin?.GetCustomVisualPackLibrary() ?? new VisualPackLibrarySnapshot
+                {
+                    MaximumPacks = VisualPackImportService.MaximumLibraryPacks
+                };
+
+                VisualPackLibraryPacks.Clear();
+
+                foreach (var pack in snapshot.Packs ?? new List<VisualPackLibraryPack>())
+                {
+                    VisualPackLibraryPacks.Add(new VisualPackLibraryViewItem
+                    {
+                        Id = pack.Id ?? string.Empty,
+                        Name = string.IsNullOrWhiteSpace(pack.Name) ? "Visual Pack" : pack.Name,
+                        Author = pack.Author ?? string.Empty,
+                        SizeText = FormatVisualPackFileSize(pack.SizeBytes),
+                        PreviewImage = LoadInstalledPackPreview("visual", pack.Id, pack.PreviewPath),
+                        IsActive = pack.IsActive
+                    });
+                }
+
+                var maximum = snapshot.MaximumPacks > 0
+                    ? snapshot.MaximumPacks
+                    : VisualPackImportService.MaximumLibraryPacks;
+
+                VisualPackLibraryCountText = string.Format(
+                    Loc("VisualPackLibrary_CountFormat", "{0} / {1} community packs"),
+                    VisualPackLibraryPacks.Count,
+                    maximum);
+
+                VisualPackLibraryCanImport = VisualPackLibraryPacks.Count < maximum;
+                VisualPackLibraryIsEmpty = VisualPackLibraryPacks.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] RefreshCustomVisualPackLibrary failed: " + ex.Message);
+                VisualPackLibraryPacks.Clear();
+                VisualPackLibraryCountText = "0 / " + VisualPackImportService.MaximumLibraryPacks;
+                VisualPackLibraryCanImport = true;
+                VisualPackLibraryIsEmpty = true;
+            }
+        }
+
+        public void RefreshCustomColorPackLibrary()
+        {
+            try
+            {
+                var snapshot = plugin?.GetCustomColorPackLibrary() ?? new ColorPackLibrarySnapshot
+                {
+                    MaximumPacks = ColorPackImportService.MaximumLibraryPacks
+                };
+
+                ColorPackLibraryPacks.Clear();
+                foreach (var pack in snapshot.Packs ?? new List<ColorPackLibraryPack>())
+                {
+                    ColorPackLibraryPacks.Add(new ColorPackLibraryViewItem
+                    {
+                        Id = pack.LocalId ?? string.Empty,
+                        Name = string.IsNullOrWhiteSpace(pack.Name) ? "Color Pack" : pack.Name,
+                        Author = pack.Author ?? string.Empty,
+                        Version = pack.Version ?? string.Empty,
+                        Description = pack.Description ?? string.Empty,
+                        SizeText = FormatVisualPackFileSize(pack.SizeBytes),
+                        PreviewImage = LoadInstalledPackPreview("color", pack.LocalId, null),
+                        IsActive = pack.IsActive
+                    });
+                }
+
+                var maximum = snapshot.MaximumPacks > 0
+                    ? snapshot.MaximumPacks
+                    : ColorPackImportService.MaximumLibraryPacks;
+                ColorPackLibraryCountText = string.Format(
+                    Loc("ColorPackLibrary_CountFormat", "{0} / {1} Color Packs"),
+                    ColorPackLibraryPacks.Count,
+                    maximum);
+                ColorPackLibraryCanImport = ColorPackLibraryPacks.Count < maximum;
+                ColorPackLibraryIsEmpty = ColorPackLibraryPacks.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] RefreshCustomColorPackLibrary failed: " + ex.Message);
+                ColorPackLibraryPacks.Clear();
+                ColorPackLibraryCountText = "0 / " + ColorPackImportService.MaximumLibraryPacks;
+                ColorPackLibraryCanImport = true;
+                ColorPackLibraryIsEmpty = true;
+            }
+        }
+
+        public void RefreshLoginPackLibrary()
+        {
+            try
+            {
+                var snapshot = plugin?.GetLoginPackLibrary() ?? new LoginPackLibrarySnapshot
+                {
+                    MaximumPacks = LoginPackImportService.MaximumLibraryPacks
+                };
+
+                LoginPackLibraryPacks.Clear();
+                foreach (var pack in snapshot.Packs ?? new List<LoginPackLibraryPack>())
+                {
+                    LoginPackLibraryPacks.Add(new LoginPackLibraryViewItem
+                    {
+                        Id = pack.LocalId ?? string.Empty,
+                        Name = string.IsNullOrWhiteSpace(pack.Name) ? "Login Pack" : pack.Name,
+                        Author = pack.Author ?? string.Empty,
+                        Version = pack.Version ?? string.Empty,
+                        Description = pack.Description ?? string.Empty,
+                        SizeText = FormatVisualPackFileSize(pack.SizeBytes),
+                        PreviewImage = LoadInstalledPackPreview("login", pack.LocalId, null),
+                        IsActive = pack.IsActive
+                    });
+                }
+
+                var maximum = snapshot.MaximumPacks > 0
+                    ? snapshot.MaximumPacks
+                    : LoginPackImportService.MaximumLibraryPacks;
+                LoginPackLibraryCountText = string.Format(
+                    Loc("LoginPackLibrary_CountFormat", "{0} / {1} Login Packs"),
+                    LoginPackLibraryPacks.Count,
+                    maximum);
+                LoginPackLibraryCanImport = LoginPackLibraryPacks.Count < maximum;
+                LoginPackLibraryIsEmpty = LoginPackLibraryPacks.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] RefreshLoginPackLibrary failed: " + ex.Message);
+                LoginPackLibraryPacks.Clear();
+                LoginPackLibraryCountText = "0 / " + LoginPackImportService.MaximumLibraryPacks;
+                LoginPackLibraryCanImport = true;
+                LoginPackLibraryIsEmpty = true;
+            }
+        }
+
+        public void RefreshSoundPackLibrary()
+        {
+            try
+            {
+                var snapshot = plugin?.GetSoundPackLibrary() ?? new SoundPackLibrarySnapshot
+                {
+                    MaximumPacks = SoundPackImportService.MaximumLibraryPacks
+                };
+
+                SoundPackLibraryPacks.Clear();
+                foreach (var pack in snapshot.Packs ?? new List<SoundPackLibraryPack>())
+                {
+                    SoundPackLibraryPacks.Add(new SoundPackLibraryViewItem
+                    {
+                        Id = pack.LocalId ?? string.Empty,
+                        Name = string.IsNullOrWhiteSpace(pack.Name) ? "Sound Pack" : pack.Name,
+                        Author = pack.Author ?? string.Empty,
+                        Version = pack.Version ?? string.Empty,
+                        Description = pack.Description ?? string.Empty,
+                        SizeText = FormatVisualPackFileSize(pack.SizeBytes),
+                        PreviewImage = LoadInstalledPackPreview("sound", pack.LocalId, null),
+                        IsActive = pack.IsActive
+                    });
+                }
+
+                var maximum = snapshot.MaximumPacks > 0
+                    ? snapshot.MaximumPacks
+                    : SoundPackImportService.MaximumLibraryPacks;
+                SoundPackLibraryCountText = string.Format(
+                    Loc("SoundPackLibrary_CountFormat", "{0} / {1} Sound Packs"),
+                    SoundPackLibraryPacks.Count,
+                    maximum);
+                SoundPackLibraryCanImport = SoundPackLibraryPacks.Count < maximum;
+                SoundPackLibraryIsEmpty = SoundPackLibraryPacks.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] RefreshSoundPackLibrary failed: " + ex.Message);
+                SoundPackLibraryPacks.Clear();
+                SoundPackLibraryCountText = "0 / " + SoundPackImportService.MaximumLibraryPacks;
+                SoundPackLibraryCanImport = true;
+                SoundPackLibraryIsEmpty = true;
+            }
+        }
+
+        public void RefreshCompletePackLibrary()
+        {
+            try
+            {
+                var snapshot = plugin?.GetCompletePackLibrary() ?? new CompletePackLibrarySnapshot
+                {
+                    MaximumPacks = CompletePackImportService.MaximumLibraryPacks
+                };
+
+                CompletePackLibraryPacks.Clear();
+                foreach (var pack in snapshot.Packs ?? new List<CompletePackLibraryPack>())
+                {
+                    var componentNames = new List<string>();
+                    if (pack.HasVisualPack) componentNames.Add(Loc("CompletePack_ComponentVisual", "Visual"));
+                    if (pack.HasColorPack) componentNames.Add(Loc("CompletePack_ComponentColor", "Color"));
+                    if (pack.HasLoginPack) componentNames.Add(Loc("CompletePack_ComponentLogin", "Login"));
+                    if (pack.HasSoundPack) componentNames.Add(Loc("CompletePack_ComponentSound", "Sound"));
+
+                    CompletePackLibraryPacks.Add(new CompletePackLibraryViewItem
+                    {
+                        Id = pack.LocalId ?? string.Empty,
+                        Name = string.IsNullOrWhiteSpace(pack.Name) ? "Complete Pack" : pack.Name,
+                        Author = pack.Author ?? string.Empty,
+                        Version = pack.Version ?? string.Empty,
+                        Description = pack.Description ?? string.Empty,
+                        SizeText = FormatVisualPackFileSize(pack.SizeBytes),
+                        PreviewImage = LoadInstalledPackPreview("complete", pack.LocalId, null),
+                        ComponentsText = string.Join(" • ", componentNames),
+                        IsActive = pack.IsActive
+                    });
+                }
+
+                var maximum = snapshot.MaximumPacks > 0
+                    ? snapshot.MaximumPacks
+                    : CompletePackImportService.MaximumLibraryPacks;
+                CompletePackLibraryCountText = string.Format(
+                    Loc("CompletePackLibrary_CountFormat", "{0} / {1} Complete Packs"),
+                    CompletePackLibraryPacks.Count,
+                    maximum);
+                CompletePackLibraryCanImport = CompletePackLibraryPacks.Count < maximum;
+                CompletePackLibraryIsEmpty = CompletePackLibraryPacks.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] RefreshCompletePackLibrary failed: " + ex.Message);
+                CompletePackLibraryPacks.Clear();
+                CompletePackLibraryCountText = "0 / " + CompletePackImportService.MaximumLibraryPacks;
+                CompletePackLibraryCanImport = true;
+                CompletePackLibraryIsEmpty = true;
+            }
+        }
+
+        private ImageSource LoadInstalledPackPreview(string packType, string localPackId, string preferredPath)
+        {
+            ImageSource image = null;
+
+            try
+            {
+                // A preview explicitly supplied by the pack creator always wins over
+                // generated/local fallbacks such as a Visual Pack's MainBackground.jpg.
+                var cachedCommunityPreview = CommunityPackPreviewHelper.TryGetCachedInstalledCommunityPreviewPath(
+                    plugin?.GetPluginUserDataPath(),
+                    packType,
+                    localPackId);
+                image = CommunityPackPreviewHelper.LoadImage(cachedCommunityPreview, 420);
+                if (image != null)
+                {
+                    return image;
+                }
+
+                var inheritedPreview = CommunityPackPreviewHelper.TryGetInheritedPreviewPath(
+                    plugin?.GetPluginUserDataPath(),
+                    packType,
+                    localPackId);
+                image = CommunityPackPreviewHelper.LoadImage(inheritedPreview, 420);
+                if (image != null)
+                {
+                    return image;
+                }
+            }
+            catch
+            {
+            }
+
+            image = CommunityPackPreviewHelper.LoadImage(preferredPath, 420);
+            if (image != null)
+            {
+                return image;
+            }
+
+            return CommunityPackPreviewHelper.LoadFallback(420);
+        }
+
+        private static string FormatVisualPackFileSize(long bytes)
+        {
+            if (bytes >= 1024L * 1024L)
+            {
+                return (bytes / (1024d * 1024d)).ToString("0.0") + " MB";
+            }
+
+            return Math.Max(0L, bytes / 1024L).ToString("0") + " KB";
+        }
 
         public void OpenVideoCenterLibraryManager()
         {
@@ -13245,6 +14149,7 @@ public bool IsInGameOverlaySuspendGameEnabled()
             nameof(AnikiHelperSettings.StartupIntroVideoEnabled),
             nameof(AnikiHelperSettings.ShutdownVideoEnabled),
 
+            nameof(AnikiHelperSettings.VisualPackCreatorPath),
             nameof(AnikiHelperSettings.CustomFilterIconsFolder),
             nameof(AnikiHelperSettings.CustomFilterBackgroundsFolder),
             nameof(AnikiHelperSettings.CustomSourceIconsFolder),
@@ -13271,6 +14176,7 @@ public bool IsInGameOverlaySuspendGameEnabled()
             nameof(AnikiHelperSettings.ScreenSaverChangeIntervalSeconds),
             nameof(AnikiHelperSettings.ScreenSaverSource),
             nameof(AnikiHelperSettings.ScreenSaverUseSplashImages),
+            nameof(AnikiHelperSettings.ScreenSaverAmbientMusicEnabled),
             nameof(AnikiHelperSettings.ScreenSaverShowLogo),
             nameof(AnikiHelperSettings.ScreenSaverShowInfoCard),
             nameof(AnikiHelperSettings.ScreenSaverAnimateBackground),
@@ -13345,6 +14251,11 @@ public bool IsInGameOverlaySuspendGameEnabled()
             if (string.Equals(e.PropertyName, nameof(AnikiHelperSettings.MediaGalleryProvider), StringComparison.Ordinal))
             {
                 NotifyHomeScreenshotProviderStateChanged();
+            }
+
+            if (string.Equals(e.PropertyName, nameof(AnikiHelperSettings.VisualPackCreatorPath), StringComparison.Ordinal))
+            {
+                RefreshVisualPackCreatorState();
             }
 
             if (string.Equals(e.PropertyName, nameof(AnikiHelperSettings.SelfName), StringComparison.Ordinal) ||
@@ -13495,6 +14406,285 @@ public bool IsInGameOverlaySuspendGameEnabled()
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("[AnikiHelperSettingsViewModel] ImportThemeConfiguration failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void OpenCommunityVisualPacksBrowser()
+        {
+            OpenCommunityPacksBrowser("visual");
+        }
+
+        public void OpenCommunityPacksBrowser(string packType)
+        {
+            try
+            {
+                plugin?.OpenCommunityPacksBrowser(packType);
+                RefreshCustomVisualPackLibrary();
+                RefreshCustomColorPackLibrary();
+                RefreshLoginPackLibrary();
+                RefreshSoundPackLibrary();
+                RefreshCompletePackLibrary();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[AnikiHelperSettingsViewModel] OpenCommunityPacksBrowser failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public Services.VisualPacks.VisualPackImportResult ImportCustomVisualPack(string zipFilePath)
+        {
+            try
+            {
+                var result = plugin?.ImportCustomVisualPack(zipFilePath);
+                RefreshCustomVisualPackLibrary();
+                return result;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[AnikiHelperSettingsViewModel] ImportCustomVisualPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ApplyCustomVisualPack(string packId)
+        {
+            try
+            {
+                plugin?.ApplyCustomVisualPack(packId);
+                RefreshCustomVisualPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[AnikiHelperSettingsViewModel] ApplyCustomVisualPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void DeleteCustomVisualPack(string packId)
+        {
+            try
+            {
+                plugin?.DeleteCustomVisualPack(packId);
+                RefreshCustomVisualPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[AnikiHelperSettingsViewModel] DeleteCustomVisualPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ExportCustomVisualPack(string packId, string destinationZipPath)
+        {
+            try
+            {
+                plugin?.ExportCustomVisualPack(packId, destinationZipPath);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[AnikiHelperSettingsViewModel] ExportCustomVisualPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public ColorPackImportResult ImportCustomColorPack(string zipFilePath)
+        {
+            try
+            {
+                var result = plugin?.ImportCustomColorPack(zipFilePath);
+                RefreshCustomColorPackLibrary();
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ImportCustomColorPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ApplyCustomColorPack(string localId)
+        {
+            try
+            {
+                plugin?.ApplyCustomColorPack(localId);
+                RefreshCustomColorPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ApplyCustomColorPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void DeleteCustomColorPack(string localId)
+        {
+            try
+            {
+                plugin?.DeleteCustomColorPack(localId);
+                RefreshCustomColorPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] DeleteCustomColorPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ExportCustomColorPack(string localId, string destinationZipPath)
+        {
+            try
+            {
+                plugin?.ExportCustomColorPack(localId, destinationZipPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ExportCustomColorPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public LoginPackImportResult ImportLoginPack(string zipFilePath)
+        {
+            try
+            {
+                var result = plugin?.ImportLoginPack(zipFilePath);
+                RefreshLoginPackLibrary();
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ImportLoginPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void DeleteLoginPack(string localId)
+        {
+            try
+            {
+                plugin?.DeleteLoginPack(localId);
+                RefreshLoginPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] DeleteLoginPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ExportLoginPack(string localId, string destinationZipPath)
+        {
+            try
+            {
+                plugin?.ExportLoginPack(localId, destinationZipPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ExportLoginPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public SoundPackImportResult ImportSoundPack(string zipFilePath)
+        {
+            try
+            {
+                var result = plugin?.ImportSoundPack(zipFilePath);
+                RefreshSoundPackLibrary();
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ImportSoundPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void DeleteSoundPack(string localId)
+        {
+            try
+            {
+                plugin?.DeleteSoundPack(localId);
+                RefreshSoundPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] DeleteSoundPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ExportSoundPack(string localId, string destinationZipPath)
+        {
+            try
+            {
+                plugin?.ExportSoundPack(localId, destinationZipPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ExportSoundPack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public CompletePackImportResult ImportCompletePack(string zipFilePath)
+        {
+            try
+            {
+                var result = plugin?.ImportCompletePack(zipFilePath);
+                RefreshCompletePackLibrary();
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ImportCompletePack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ApplyCompletePack(string localId)
+        {
+            try
+            {
+                plugin?.ApplyCompletePack(localId);
+                RefreshCustomVisualPackLibrary();
+                RefreshCustomColorPackLibrary();
+                RefreshLoginPackLibrary();
+                RefreshSoundPackLibrary();
+                RefreshCompletePackLibrary();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ApplyCompletePack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void DeleteCompletePack(string localId)
+        {
+            try
+            {
+                plugin?.DeleteCompletePack(localId);
+                RefreshCompletePackLibrary();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] DeleteCompletePack failed: " + ex.Message);
+                throw;
+            }
+        }
+
+        public void ExportCompletePack(string localId, string destinationZipPath)
+        {
+            try
+            {
+                plugin?.ExportCompletePack(localId, destinationZipPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[AnikiHelperSettingsViewModel] ExportCompletePack failed: " + ex.Message);
                 throw;
             }
         }

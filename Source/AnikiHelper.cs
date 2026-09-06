@@ -11,6 +11,11 @@ using AnikiHelper.Services.WebBrowser;
 using AnikiHelper.Services.VideoPlayer;
 using AnikiHelper.Services.EasterEgg;
 using AnikiHelper.Services.FirstSetup;
+using AnikiHelper.Services.ColorPacks;
+using AnikiHelper.Services.CompletePacks;
+using AnikiHelper.Services.LoginPacks;
+using AnikiHelper.Services.SoundPacks;
+using AnikiHelper.Services.VisualPacks;
 using Microsoft.Win32;
 using Newtonsoft.Json;
 using Playnite.SDK;
@@ -157,22 +162,41 @@ namespace AnikiHelper
                 {
                     var swUi = Stopwatch.StartNew();
                     var rand = new Random();
-                    const int max = 42;
 
-                    int pick;
-                    if (Settings.LastLoginRandomIndex >= 1 && Settings.LastLoginRandomIndex <= max && max > 1)
+                    var installedIndexes = anikiThemeSettingsService?.GetAvailableLoginRandomIndexes()?.ToList()
+                        ?? new List<int>();
+                    var normalIndexes = installedIndexes
+                        .Where(index => index > 0 && index != LoginBackgroundMediaService.LuckyDayRandomIndex)
+                        .Distinct()
+                        .OrderBy(index => index)
+                        .ToList();
+
+                    // Lucky Day is an easter egg, not a normal Random Login entry. Keep the same
+                    // historical ~1/42 trigger chance, independently of how many backgrounds the
+                    // user has installed, and never trigger it twice in a row.
+                    var pick = 0;
+                    var canRollLuckyDay = Settings.LastLoginRandomIndex != LoginBackgroundMediaService.LuckyDayRandomIndex;
+                    if (canRollLuckyDay && rand.Next(1, 43) == LoginBackgroundMediaService.LuckyDayRandomIndex)
                     {
-                        do
+                        pick = LoginBackgroundMediaService.LuckyDayRandomIndex;
+                    }
+                    else if (normalIndexes.Count > 0)
+                    {
+                        var candidates = normalIndexes;
+                        if (normalIndexes.Count > 1 && Settings.LastLoginRandomIndex > 0)
                         {
-                            pick = rand.Next(1, max + 1);
+                            candidates = normalIndexes
+                                .Where(index => index != Settings.LastLoginRandomIndex)
+                                .ToList();
                         }
-                        while (pick == Settings.LastLoginRandomIndex);
-                    }
-                    else
-                    {
-                        pick = rand.Next(1, max + 1);
+
+                        if (candidates.Count > 0)
+                        {
+                            pick = candidates[rand.Next(0, candidates.Count)];
+                        }
                     }
 
+                    // 0 intentionally uses LoginRandom.xaml's built-in Acceuil.mp4 fallback.
                     Settings.LoginRandomIndex = pick;
                     Settings.LastLoginRandomIndex = pick;
 
@@ -186,7 +210,7 @@ namespace AnikiHelper
                         Settings.LuckyStyleIndex = 0;
                     }
 
-                    DebugLog($"[AnikiHelper][LuckyDay] Random login pick took {swUi.ElapsedMilliseconds}ms | pick={pick} | lucky={Settings.IsLuckyDay} | luckyStyle={Settings.LuckyStyleIndex}");
+                    DebugLog($"[AnikiHelper][LuckyDay] Random login pick took {swUi.ElapsedMilliseconds}ms | installed={normalIndexes.Count} | pick={pick} | lucky={Settings.IsLuckyDay} | luckyStyle={Settings.LuckyStyleIndex}");
                 });
 
                 SaveSettingsSafe();
@@ -330,6 +354,19 @@ namespace AnikiHelper
         // Startup focus recovery is only meant to repair Playnite immediately after its own
         // startup. A game launch invalidates any delayed recovery attempts still queued.
         private int startupFocusRecoveryGeneration;
+        private bool startupLibraryFocusRecovered;
+        private bool controllerPreProcessGuardHooked;
+        private DateTime lastWebBrowserDirectionalControllerInputUtc = DateTime.MinValue;
+        private Window achievementBackPreviewWindow;
+        private bool achievementBackPreviewHooked;
+        private DateTime lastAchievementCategoryBackHandledUtc = DateTime.MinValue;
+
+        // Playnite closes GameMenuWindow before creating ExtensionsMenuWindow. On some
+        // Windows/Xbox-mode setups that tiny native handoff can temporarily deactivate the
+        // fullscreen process and expose the desktop. Arm a very short focus bridge only when
+        // the user actually activates the native Game Menu -> Extensions item.
+        private DateTime nativeExtensionsHandoffArmedUntilUtc = DateTime.MinValue;
+        private static readonly TimeSpan NativeExtensionsHandoffGrace = TimeSpan.FromSeconds(2);
 
         // Game-ready diagnostics are intentionally throttled so debug logs stay readable
         // while still exposing why a candidate is being rejected.
@@ -8503,7 +8540,7 @@ namespace AnikiHelper
 
             steamUpdateService = new SteamUpdateLiteService(playniteLang);
             rssNewsService = new SteamGlobalNewsService(api, Settings);
-            eventSoundService = new EventSoundService(api, Settings);
+            eventSoundService = new EventSoundService(api, Settings, GetPluginUserDataPath());
             anikiWindowManager = new AnikiWindowManager(api);
             anikiWindowManager.OpenWindowStateChanged += isOpen =>
             {
@@ -8793,7 +8830,7 @@ namespace AnikiHelper
 
                 navigationSettleTimer = new DispatcherTimer
                 {
-                    Interval = TimeSpan.FromMilliseconds(250)
+                    Interval = TimeSpan.FromMilliseconds(400)
                 };
 
                 navigationSettleTimer.Tick += (s, e) =>
@@ -9501,6 +9538,755 @@ namespace AnikiHelper
             catch
             {
                 return false;
+            }
+        }
+
+        private void HookPlayniteControllerPreProcessGuard()
+        {
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher == null)
+                {
+                    return;
+                }
+
+                if (!dispatcher.CheckAccess())
+                {
+                    dispatcher.BeginInvoke(new Action(HookPlayniteControllerPreProcessGuard), DispatcherPriority.Send);
+                    return;
+                }
+
+                if (controllerPreProcessGuardHooked)
+                {
+                    return;
+                }
+
+                InputManager.Current.PreProcessInput += OnPlaynitePreProcessInput;
+                controllerPreProcessGuardHooked = true;
+
+                HookAchievementBackPreviewGuard();
+
+                DebugLog("[AnikiHelper][ControllerGuard][PreProcess] Hooked before Playnite WPF input routing.");
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][ControllerGuard] Failed to hook WPF PreProcessInput guard.");
+            }
+        }
+
+        private void UnhookPlayniteControllerPreProcessGuard()
+        {
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher != null && !dispatcher.CheckAccess())
+                {
+                    dispatcher.Invoke(new Action(UnhookPlayniteControllerPreProcessGuard));
+                    return;
+                }
+
+                if (!controllerPreProcessGuardHooked)
+                {
+                    return;
+                }
+
+                InputManager.Current.PreProcessInput -= OnPlaynitePreProcessInput;
+                controllerPreProcessGuardHooked = false;
+
+                UnhookAchievementBackPreviewGuard();
+            }
+            catch
+            {
+                controllerPreProcessGuardHooked = false;
+                UnhookAchievementBackPreviewGuard();
+            }
+        }
+
+        private void HookAchievementBackPreviewGuard()
+        {
+            try
+            {
+                var window = Application.Current?.MainWindow;
+                if (window == null)
+                {
+                    return;
+                }
+
+                if (achievementBackPreviewHooked && ReferenceEquals(achievementBackPreviewWindow, window))
+                {
+                    return;
+                }
+
+                UnhookAchievementBackPreviewGuard();
+
+                window.AddHandler(
+                    Keyboard.PreviewKeyDownEvent,
+                    new KeyEventHandler(OnPlaynitePreviewKeyDownForAchievementBack),
+                    true);
+
+                achievementBackPreviewWindow = window;
+                achievementBackPreviewHooked = true;
+                DebugLog("[AnikiHelper][Achievements] PreviewKeyDown DLC/category Back guard hooked.");
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][Achievements] Failed to hook PreviewKeyDown DLC/category Back guard.");
+            }
+        }
+
+        private void UnhookAchievementBackPreviewGuard()
+        {
+            try
+            {
+                if (achievementBackPreviewWindow != null && achievementBackPreviewHooked)
+                {
+                    achievementBackPreviewWindow.RemoveHandler(
+                        Keyboard.PreviewKeyDownEvent,
+                        new KeyEventHandler(OnPlaynitePreviewKeyDownForAchievementBack));
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                achievementBackPreviewWindow = null;
+                achievementBackPreviewHooked = false;
+            }
+        }
+
+        private void OnPlaynitePreviewKeyDownForAchievementBack(object sender, KeyEventArgs args)
+        {
+            try
+            {
+                if (args == null || !IsAchievementBackPress(args))
+                {
+                    return;
+                }
+
+                // This is the routed-event fallback for native controller B. Playnite creates
+                // GameControllerInputEventArgs as a KeyDown routed event before its GameDetails
+                // InputBindings run. Consuming it here prevents ToggleGameDetailsCommand from
+                // closing the entire achievements page.
+                if (TryHandleAchievementCategoryBackCore())
+                {
+                    args.Handled = true;
+                    DebugLog(
+                        $"[AnikiHelper][Achievements] PreviewKeyDown consumed category Back | " +
+                        $"Type={args.GetType().FullName} | Button={GetRuntimePropertyText(args, "Button")} | " +
+                        $"ButtonState={GetRuntimePropertyText(args, "ButtonState")}");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][Achievements] PreviewKeyDown DLC/category Back guard failed.");
+            }
+        }
+
+        private void OnPlaynitePreProcessInput(object sender, PreProcessInputEventArgs args)
+        {
+            try
+            {
+                if (args?.StagingItem?.Input == null)
+                {
+                    return;
+                }
+
+                var input = args.StagingItem.Input;
+
+                // Native Playnite Game Menu -> Extensions is implemented as Close(GameMenu)
+                // followed by Open(ExtensionsMenu). Remember that exact activation before the
+                // native command runs so Application.Deactivated can bridge the tiny gap without
+                // exposing the Windows desktop.
+                TryArmNativeExtensionsHandoff(input);
+
+                // The Web Browser Home has its own deterministic D-pad navigation. Playnite
+                // processes GameControllerInputEventArgs before raising the SDK ButtonChanged
+                // event that Aniki uses, and also mirrors controller directions as arrow keys.
+                // Cancel only those native directional events while the favorites Home owns
+                // controller focus. The SDK event is still raised afterwards, so Aniki performs
+                // exactly one MoveFocus instead of Playnite + Aniki moving two cards.
+                if (TryBlockWebBrowserHomeNativeDirectionalInput(input))
+                {
+                    input.Handled = true;
+                    args.Cancel();
+                    return;
+                }
+
+                // Playnite normally binds B / Back / Escape in GameDetails directly to
+                // ToggleGameDetailsCommand. When PlayniteAchievements is showing one DLC/category,
+                // that closes the entire Achievements view instead of returning to the category list.
+                // Intercept the input before Playnite sees it and invoke the already-working
+                // BackToCategoryButton command from the theme instead.
+                if (TryHandleAchievementCategoryBack(input))
+                {
+                    input.Handled = true;
+                    args.Cancel();
+                    return;
+                }
+
+                if (!ShouldBlockPlayniteUiWhileGameOwnsForeground())
+                {
+                    return;
+                }
+
+                // Playnite's GameControllerManager first calls InputManager.ProcessInput(...)
+                // and only afterwards raises the SDK ButtonChanged event used by plugins.
+                // Cancelling here is therefore early enough to stop native Playnite navigation.
+                // We use the runtime type name because GameControllerInputEventArgs lives in the
+                // Playnite application assembly, not in the public Playnite.SDK reference.
+                var isPlayniteControllerInput = string.Equals(
+                    input.GetType().FullName,
+                    "Playnite.Input.GameControllerInputEventArgs",
+                    StringComparison.Ordinal);
+
+                // Playnite also mirrors D-pad/stick directions as WM_KEYDOWN/WM_KEYUP messages.
+                // Those arrive as normal KeyEventArgs after the controller event, so block WPF key
+                // input too while a game owns foreground. Physical keyboard input should not be
+                // routed to a background Playnite window either.
+                var isKeyInput = input is KeyEventArgs;
+
+                if (!isPlayniteControllerInput && !isKeyInput)
+                {
+                    return;
+                }
+
+                input.Handled = true;
+                args.Cancel();
+
+                if (isPlayniteControllerInput)
+                {
+                    var stateText = GetRuntimePropertyText(input, "ButtonState");
+                    if (string.Equals(stateText, "Pressed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DebugLog(
+                            $"[AnikiHelper][ControllerGuard][PreProcess] BLOCKED Playnite controller input | " +
+                            $"Button={GetRuntimePropertyText(input, "Button")} | State={stateText} | " +
+                            $"ForegroundProcess='{GetForegroundProcessNameSafe()}'");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Fail open if WPF internals ever change; the later SDK-level guard still applies
+                // to Aniki Helper even if this early Playnite guard cannot classify the event.
+                logger?.Warn(ex, "[AnikiHelper][ControllerGuard] PreProcessInput guard failed.");
+            }
+        }
+
+        private bool TryBlockWebBrowserHomeNativeDirectionalInput(InputEventArgs input)
+        {
+            try
+            {
+                if (input == null || webBrowserService?.IsHomeControllerNavigationActive != true)
+                {
+                    return false;
+                }
+
+                var isPlayniteControllerInput = string.Equals(
+                    input.GetType().FullName,
+                    "Playnite.Input.GameControllerInputEventArgs",
+                    StringComparison.Ordinal);
+
+                if (isPlayniteControllerInput)
+                {
+                    var button = GetRuntimePropertyText(input, "Button");
+                    if (!IsWebBrowserDirectionalControllerButton(button))
+                    {
+                        return false;
+                    }
+
+                    // Remember the native controller event briefly so the WM_KEY arrow mirror
+                    // generated from the same physical press can be cancelled as well.
+                    lastWebBrowserDirectionalControllerInputUtc = DateTime.UtcNow;
+
+                    var state = GetRuntimePropertyText(input, "ButtonState");
+                    if (string.Equals(state, "Pressed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DebugLog(
+                            $"[AnikiHelper][WebBrowser][PreProcess] BLOCKED native directional input | " +
+                            $"Button={button} | State={state}");
+                    }
+
+                    return true;
+                }
+
+                var keyArgs = input as KeyEventArgs;
+                if (keyArgs == null || !IsWebBrowserDirectionalKey(keyArgs.Key))
+                {
+                    return false;
+                }
+
+                // Do not steal ordinary keyboard arrow navigation. Only suppress an arrow key
+                // when it immediately follows a controller direction and is therefore Playnite's
+                // mirrored WM_KEY event for that same gamepad press.
+                return (DateTime.UtcNow - lastWebBrowserDirectionalControllerInputUtc) <=
+                       TimeSpan.FromMilliseconds(140);
+            }
+            catch (Exception ex)
+            {
+                global::AnikiHelper.AnikiLog.Debug(
+                    logger,
+                    ex,
+                    "[AnikiHelper][WebBrowser][PreProcess] Directional guard failed.");
+                return false;
+            }
+        }
+
+        private static bool IsWebBrowserDirectionalControllerButton(string button)
+        {
+            return string.Equals(button, "DPadUp", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(button, "DPadDown", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(button, "DPadLeft", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(button, "DPadRight", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(button, "LeftStickUp", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(button, "LeftStickDown", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(button, "LeftStickLeft", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(button, "LeftStickRight", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsWebBrowserDirectionalKey(Key key)
+        {
+            return key == Key.Up ||
+                   key == Key.Down ||
+                   key == Key.Left ||
+                   key == Key.Right;
+        }
+
+        private bool TryHandleAchievementCategoryBack(InputEventArgs input)
+        {
+            if (!IsAchievementBackPress(input))
+            {
+                return false;
+            }
+
+            return TryHandleAchievementCategoryBackCore();
+        }
+
+        private bool TryHandleAchievementCategoryBack(OnControllerButtonStateChangedArgs args)
+        {
+            if (args == null ||
+                args.Button != ControllerInput.B ||
+                args.State != ControllerInputState.Pressed)
+            {
+                return false;
+            }
+
+            // SDK-level fallback for controller B. The WPF GameControllerInputEventArgs path
+            // is handled earlier in PreProcessInput so Playnite never receives the close input,
+            // but keeping this second guard prevents Aniki Helper from forwarding/handling the
+            // same B press if Playnite changes its internal input event shape in the future.
+            return TryHandleAchievementCategoryBackCore();
+        }
+
+        private bool TryHandleAchievementCategoryBackCore()
+        {
+            try
+            {
+                // If the controller event is mirrored by another Back/Escape input immediately
+                // afterwards, consume the duplicate as well so it cannot close GameDetails.
+                if ((DateTime.UtcNow - lastAchievementCategoryBackHandledUtc).TotalMilliseconds < 250)
+                {
+                    return true;
+                }
+
+                if (PlayniteApi?.ApplicationInfo?.Mode != ApplicationMode.Fullscreen ||
+                    !IsAnikiThemeActive())
+                {
+                    return false;
+                }
+
+                var mainWindow = PlayniteApi?.Dialogs?.GetCurrentAppWindow();
+                if (mainWindow == null || !mainWindow.IsVisible)
+                {
+                    return false;
+                }
+
+                // This button only becomes visible when PA has category summaries AND the
+                // selected filter is not "All". In other words: exactly while the user is
+                // inside Main Game / DLC achievements and B should go back one level.
+                var backToCategoryButton =
+                    FindVisualChildByName<FrameworkElement>(mainWindow, "BackToCategoryButton");
+
+                if (backToCategoryButton == null ||
+                    backToCategoryButton.Visibility != Visibility.Visible ||
+                    !backToCategoryButton.IsVisible)
+                {
+                    return false;
+                }
+
+                lastAchievementCategoryBackHandledUtc = DateTime.UtcNow;
+
+                // Reuse the exact command/parameter of the physical button that is already
+                // known to work. This avoids depending on PlayniteAchievements internals.
+                if (backToCategoryButton is ICommandSource commandSource &&
+                    commandSource.Command != null)
+                {
+                    var command = commandSource.Command;
+                    var parameter = commandSource.CommandParameter;
+
+                    if (command.CanExecute(parameter))
+                    {
+                        command.Execute(parameter);
+                        DebugLog("[AnikiHelper][Achievements] Back returned from DLC/category achievements to category list.");
+                    }
+                    else
+                    {
+                        DebugLog("[AnikiHelper][Achievements] BackToCategory command could not execute; native close was still blocked.");
+                    }
+                }
+                else
+                {
+                    // Safety fallback: if a future PA/theme change removes the command source,
+                    // B still does nothing in the DLC subview rather than closing the whole page.
+                    DebugLog("[AnikiHelper][Achievements] BackToCategoryButton has no command source; native close was blocked.");
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][Achievements] Failed to handle DLC/category Back navigation.");
+                return false;
+            }
+        }
+
+        private static bool IsAchievementBackPress(InputEventArgs input)
+        {
+            if (input == null)
+            {
+                return false;
+            }
+
+            // Normal keyboard Back / Escape.
+            if (input is KeyEventArgs keyArgs &&
+                (keyArgs.Key == Key.Back || keyArgs.Key == Key.Escape))
+            {
+                return keyArgs.RoutedEvent == Keyboard.KeyDownEvent || keyArgs.IsDown;
+            }
+
+            // Native Playnite controller events are KeyEventArgs with Key.None plus runtime
+            // Button / ButtonState properties. Do not depend on the concrete runtime type name:
+            // this keeps the guard working even if Playnite moves the class to another assembly.
+            var buttonText = GetRuntimePropertyText(input, "Button");
+            if (!string.Equals(buttonText, "B", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var stateText = GetRuntimePropertyText(input, "ButtonState");
+            if (string.Equals(stateText, "Pressed", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Fallback to the routed event itself. GameControllerInputEventArgs is constructed
+            // with Keyboard.KeyDownEvent for a press, even though its Key value is Key.None.
+            return input.RoutedEvent == Keyboard.KeyDownEvent;
+        }
+
+
+        private void TryArmNativeExtensionsHandoff(InputEventArgs input)
+        {
+            try
+            {
+                if (input == null ||
+                    PlayniteApi?.ApplicationInfo?.Mode != ApplicationMode.Fullscreen ||
+                    !IsAnikiThemeActive() ||
+                    !IsNativeExtensionsActivationInput(input) ||
+                    !IsNativeGameMenuExtensionsItemFocused(input))
+                {
+                    return;
+                }
+
+                nativeExtensionsHandoffArmedUntilUtc = DateTime.UtcNow.Add(NativeExtensionsHandoffGrace);
+                DebugLog(
+                    "[AnikiHelper][NativeExtensionsHandoff] ARMED | " +
+                    $"InputType={input.GetType().FullName} | Button={GetRuntimePropertyText(input, "Button")} | " +
+                    $"Key={(input as KeyEventArgs)?.Key.ToString() ?? "<none>"}");
+
+                QueueNativeExtensionsHandoffCompletion();
+            }
+            catch (Exception ex)
+            {
+                global::AnikiHelper.AnikiLog.Debug(
+                    logger,
+                    ex,
+                    "[AnikiHelper][NativeExtensionsHandoff] Failed to arm focus bridge.");
+            }
+        }
+
+        private static bool IsNativeExtensionsActivationInput(InputEventArgs input)
+        {
+            if (input == null)
+            {
+                return false;
+            }
+
+            // Playnite's native controller activation button. Runtime reflection keeps this
+            // independent from the internal GameControllerInputEventArgs assembly.
+            var buttonText = GetRuntimePropertyText(input, "Button");
+            if (string.Equals(buttonText, "A", StringComparison.OrdinalIgnoreCase))
+            {
+                var stateText = GetRuntimePropertyText(input, "ButtonState");
+                if (string.Equals(stateText, "Pressed", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (input is KeyEventArgs controllerKeyArgs)
+                {
+                    return controllerKeyArgs.RoutedEvent == Keyboard.KeyDownEvent || controllerKeyArgs.IsDown;
+                }
+            }
+
+            if (input is KeyEventArgs keyArgs)
+            {
+                if (!(keyArgs.RoutedEvent == Keyboard.KeyDownEvent || keyArgs.IsDown))
+                {
+                    return false;
+                }
+
+                return keyArgs.Key == Key.Enter || keyArgs.Key == Key.Space;
+            }
+
+            if (input is MouseButtonEventArgs mouseArgs)
+            {
+                return mouseArgs.ChangedButton == MouseButton.Left &&
+                       mouseArgs.ButtonState == MouseButtonState.Pressed;
+            }
+
+            return false;
+        }
+
+        private bool IsNativeGameMenuExtensionsItemFocused(InputEventArgs input)
+        {
+            try
+            {
+                var application = Application.Current;
+                var extensionsTemplate = application?.TryFindResource("GameMenuExtensionsTemplate") as DataTemplate;
+                if (extensionsTemplate == null)
+                {
+                    return false;
+                }
+
+                DependencyObject current = null;
+
+                if (input is MouseButtonEventArgs)
+                {
+                    current = Mouse.DirectlyOver as DependencyObject;
+                }
+
+                if (current == null)
+                {
+                    current = Keyboard.FocusedElement as DependencyObject;
+                }
+
+                while (current != null)
+                {
+                    if (current is ContentControl contentControl &&
+                        ReferenceEquals(contentControl.ContentTemplate, extensionsTemplate))
+                    {
+                        return true;
+                    }
+
+                    if (current is FrameworkElement frameworkElement)
+                    {
+                        var dataContext = frameworkElement.DataContext;
+                        if (dataContext != null &&
+                            string.Equals(
+                                dataContext.GetType().FullName,
+                                "Playnite.FullscreenApp.ViewModels.GameActionItem",
+                                StringComparison.Ordinal))
+                        {
+                            try
+                            {
+                                var templateProperty = dataContext.GetType().GetProperty("Template");
+                                var itemTemplate = templateProperty?.GetValue(dataContext, null);
+                                if (ReferenceEquals(itemTemplate, extensionsTemplate))
+                                {
+                                    return true;
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+
+                    DependencyObject parent = null;
+                    try
+                    {
+                        parent = VisualTreeHelper.GetParent(current);
+                    }
+                    catch
+                    {
+                        parent = null;
+                    }
+
+                    if (parent == null && current is FrameworkElement parentElement)
+                    {
+                        parent = parentElement.Parent;
+                    }
+
+                    current = parent;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private bool TryBridgeNativeExtensionsHandoffFocus()
+        {
+            try
+            {
+                if (DateTime.UtcNow > nativeExtensionsHandoffArmedUntilUtc)
+                {
+                    nativeExtensionsHandoffArmedUntilUtc = DateTime.MinValue;
+                    return false;
+                }
+
+                var application = Application.Current;
+                if (application == null)
+                {
+                    return false;
+                }
+
+                // If the destination already exists, give it foreground immediately. Otherwise
+                // keep the fullscreen owner in front for the few milliseconds between windows.
+                var target = FindVisibleNativeExtensionsMenuWindow() ?? application.MainWindow;
+                if (target == null || !target.IsVisible)
+                {
+                    return false;
+                }
+
+                if (target.WindowState == WindowState.Minimized)
+                {
+                    target.WindowState = WindowState.Normal;
+                }
+
+                target.Activate();
+                target.Focus();
+
+                var handle = new WindowInteropHelper(target).Handle;
+                if (handle != IntPtr.Zero)
+                {
+                    SetForegroundWindow(handle);
+                }
+
+                DebugLog(
+                    "[AnikiHelper][NativeExtensionsHandoff] Focus bridge applied | " +
+                    $"Target={target.GetType().FullName}");
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                global::AnikiHelper.AnikiLog.Debug(
+                    logger,
+                    ex,
+                    "[AnikiHelper][NativeExtensionsHandoff] Focus bridge failed.");
+                return false;
+            }
+        }
+
+        private Window FindVisibleNativeExtensionsMenuWindow()
+        {
+            try
+            {
+                return Application.Current?.Windows
+                    .OfType<Window>()
+                    .FirstOrDefault(window =>
+                        window != null &&
+                        window.IsVisible &&
+                        string.Equals(
+                            window.GetType().FullName,
+                            "Playnite.FullscreenApp.Windows.ExtensionsMenuWindow",
+                            StringComparison.Ordinal));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void QueueNativeExtensionsHandoffCompletion()
+        {
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher == null)
+                {
+                    return;
+                }
+
+                _ = dispatcher.BeginInvoke(
+                    new Action(() =>
+                    {
+                        try
+                        {
+                            if (DateTime.UtcNow > nativeExtensionsHandoffArmedUntilUtc)
+                            {
+                                nativeExtensionsHandoffArmedUntilUtc = DateTime.MinValue;
+                                return;
+                            }
+
+                            var extensionsWindow = FindVisibleNativeExtensionsMenuWindow();
+                            if (extensionsWindow != null)
+                            {
+                                if (extensionsWindow.WindowState == WindowState.Minimized)
+                                {
+                                    extensionsWindow.WindowState = WindowState.Normal;
+                                }
+
+                                extensionsWindow.Activate();
+                                extensionsWindow.Focus();
+
+                                var handle = new WindowInteropHelper(extensionsWindow).Handle;
+                                if (handle != IntPtr.Zero)
+                                {
+                                    SetForegroundWindow(handle);
+                                }
+
+                                DebugLog(
+                                    "[AnikiHelper][NativeExtensionsHandoff] COMPLETE | " +
+                                    "ExtensionsMenuWindow foreground confirmed.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            global::AnikiHelper.AnikiLog.Debug(
+                                logger,
+                                ex,
+                                "[AnikiHelper][NativeExtensionsHandoff] Completion focus failed.");
+                        }
+                        finally
+                        {
+                            nativeExtensionsHandoffArmedUntilUtc = DateTime.MinValue;
+                        }
+                    }),
+                    DispatcherPriority.Background);
+            }
+            catch
+            {
+            }
+        }
+
+        private static string GetRuntimePropertyText(object instance, string propertyName)
+        {
+            try
+            {
+                var property = instance?.GetType().GetProperty(propertyName);
+                var value = property?.GetValue(instance, null);
+                return value?.ToString() ?? "<unknown>";
+            }
+            catch
+            {
+                return "<unknown>";
             }
         }
 
@@ -14014,16 +14800,38 @@ namespace AnikiHelper
             items = items ?? new System.Collections.Generic.List<SteamStoreItem>();
 
             // Keep identical Store cards in place so WPF preserves focus.
-            if (AreSteamStoreCollectionsEquivalentForUi(target, items))
+            if (!AreSteamStoreCollectionsEquivalentForUi(target, items))
+            {
+                target.Clear();
+
+                foreach (var item in items)
+                {
+                    target.Add(item);
+                }
+            }
+
+            SyncSteamStoreHubProjection(target, items);
+        }
+
+        private void SyncSteamStoreHubProjection(
+            System.Collections.ObjectModel.ObservableCollection<SteamStoreItem> source,
+            System.Collections.Generic.List<SteamStoreItem> items)
+        {
+            if (Settings == null || source == null)
             {
                 return;
             }
 
-            target.Clear();
-
-            foreach (var item in items)
+            // The Hub only displays four Deals / Upcoming cards. Keep dedicated
+            // four-item collections so WPF doesn't create hidden containers for
+            // the remaining Store items.
+            if (Settings.IsSteamStoreDealsCollection(source))
             {
-                target.Add(item);
+                ReplaceSteamStoreCollection(Settings.SteamStoreDealsHub, items.Take(4).ToList());
+            }
+            else if (Settings.IsSteamStoreUpcomingCollection(source))
+            {
+                ReplaceSteamStoreCollection(Settings.SteamStoreUpcomingHub, items.Take(4).ToList());
             }
         }
 
@@ -15883,6 +16691,77 @@ namespace AnikiHelper
             anikiWindowManager?.OpenWindow(parameter);
         }
 
+        public void OpenAfterTopBarManagerClosed(Action openDestination)
+        {
+            if (openDestination == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+
+                Action queueDestination = () =>
+                {
+                    if (dispatcher == null || dispatcher.HasShutdownStarted)
+                    {
+                        openDestination();
+                        return;
+                    }
+
+                    // Let the outgoing Top Bar Manager finish Close/dim cleanup first.
+                    // The destination then opens on the next idle dispatcher turn, which
+                    // keeps controller focus and window ownership deterministic.
+                    dispatcher.BeginInvoke(openDestination, DispatcherPriority.ApplicationIdle);
+                };
+
+                if (anikiWindowManager?.HasOpenWindow == true &&
+                    anikiWindowManager.CloseTopWindowForExternalHandoff(queueDestination))
+                {
+                    return;
+                }
+
+                queueDestination();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper] Failed to hand off from Top Bar manager.");
+
+                try
+                {
+                    openDestination();
+                }
+                catch (Exception destinationEx)
+                {
+                    logger?.Warn(destinationEx, "[AnikiHelper] Top Bar manager destination fallback failed.");
+                }
+            }
+        }
+
+        public void OpenQuickAccessExtraFromTopBarManager()
+        {
+            try
+            {
+                Action openExtra = () => OpenQuickAccessExtraFromOverlay();
+
+                // The PS5-style manager is itself an Aniki popup. Close it first,
+                // suppress the intermediate focus restore, then hand off directly
+                // to the existing Quick Access > Extra page.
+                if (anikiWindowManager?.HasOpenWindow == true &&
+                    anikiWindowManager.CloseTopWindowForExternalHandoff(openExtra))
+                {
+                    return;
+                }
+
+                openExtra();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper] Failed to open Quick Access Extra from Top Bar manager.");
+            }
+        }
+
         public void OpenChildWindow(string styleKey)
         {
             anikiWindowManager?.OpenChildWindow(styleKey);
@@ -17114,6 +17993,24 @@ namespace AnikiHelper
         {
             try
             {
+                // Playnite's native Game Menu closes before ExtensionsMenuWindow is created.
+                // On affected systems that tiny gap can deactivate the whole fullscreen app and
+                // expose the desktop for one frame. If this exact handoff was armed by the user
+                // activating Extensions, keep Playnite foreground instead of treating it as a
+                // genuine switch to another application.
+                if (TryBridgeNativeExtensionsHandoffFocus())
+                {
+                    if (Settings != null)
+                    {
+                        Settings.IsPlayniteApplicationActive = true;
+                    }
+
+                    DebugLog(
+                        "[AnikiHelper][AudioFocus] Native Extensions handoff deactivation bridged; " +
+                        "audio remains active.");
+                    return;
+                }
+
                 if (Settings != null && Settings.IsPlayniteApplicationActive)
                 {
                     Settings.IsPlayniteApplicationActive = false;
@@ -17773,6 +18670,26 @@ namespace AnikiHelper
             anikiThemeSettingsService?.Reload();
         }
 
+        public string GetLoginBackgroundMediaLibraryFolder()
+        {
+            return anikiThemeSettingsService?.GetLoginBackgroundMediaLibraryFolder() ?? string.Empty;
+        }
+
+        public int GetDownloadedLoginBackgroundVideosCount()
+        {
+            return anikiThemeSettingsService?.GetDownloadedLoginBackgroundVideosCount() ?? 0;
+        }
+
+        public long GetDownloadedLoginBackgroundVideosSizeBytes()
+        {
+            return anikiThemeSettingsService?.GetDownloadedLoginBackgroundVideosSizeBytes() ?? 0L;
+        }
+
+        public void ClearDownloadedLoginBackgroundVideos()
+        {
+            anikiThemeSettingsService?.ClearDownloadedLoginBackgroundVideos();
+        }
+
         public void ExportAnikiThemeConfiguration(string exportFilePath)
         {
             if (anikiThemeSettingsService == null)
@@ -17791,6 +18708,301 @@ namespace AnikiHelper
             }
 
             anikiThemeSettingsService.ImportThemeConfiguration(importFilePath);
+        }
+
+        public void OpenCommunityVisualPacksBrowser()
+        {
+            OpenCommunityPacksBrowser("visual");
+        }
+
+        public void OpenCommunityPacksBrowser(string packType)
+        {
+            AnikiCommunityVisualPacksView view = null;
+            try
+            {
+                if (PlayniteApi?.ApplicationInfo?.Mode != ApplicationMode.Desktop)
+                {
+                    return;
+                }
+
+                view = new AnikiCommunityVisualPacksView(this, PlayniteApi, GetPluginUserDataPath(), logger, packType);
+                var window = PlayniteApi.Dialogs.CreateWindow(new WindowCreationOptions
+                {
+                    ShowMinimizeButton = false,
+                    ShowMaximizeButton = true,
+                    ShowCloseButton = true
+                });
+
+                window.Title = view.WindowTitle;
+                window.Width = 1080;
+                window.Height = 760;
+                window.MinWidth = 820;
+                window.MinHeight = 560;
+                window.Content = view;
+                window.Owner = PlayniteApi.Dialogs.GetCurrentAppWindow();
+                window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+                window.Closed += (_, __) =>
+                {
+                    try { view.Dispose(); } catch { }
+                };
+
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                try { view?.Dispose(); } catch { }
+                logger?.Warn(ex, "[AnikiHelper][CommunityPacks] Failed to open Community Packs browser.");
+                PlayniteApi?.Dialogs?.ShowErrorMessage(
+                    (Application.Current?.TryFindResource("CommunityPack_OpenError") as string ?? "The Community Packs browser could not be opened:") +
+                    Environment.NewLine + ex.Message,
+                    Application.Current?.TryFindResource("CommunityPack_GenericTitle") as string ?? "Community Packs");
+            }
+        }
+
+        public VisualPackImportResult ImportCustomVisualPack(string zipFilePath)
+        {
+            var service = new VisualPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            return service.Import(zipFilePath, false, false);
+        }
+
+        public VisualPackImportResult ImportCustomVisualPack(string zipFilePath, bool allowOneTemporaryOverflow)
+        {
+            var service = new VisualPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            return service.Import(zipFilePath, allowOneTemporaryOverflow, false);
+        }
+
+        public VisualPackLibrarySnapshot GetCustomVisualPackLibrary()
+        {
+            var service = new VisualPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            return service.GetLibrary();
+        }
+
+        public void ApplyCustomVisualPack(string packId)
+        {
+            anikiThemeSettingsService?.NotifyCompletePackComponentChanged("visual");
+            var service = new VisualPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Apply(packId);
+        }
+
+        public void DeleteCustomVisualPack(string packId)
+        {
+            anikiThemeSettingsService?.NotifyCompletePackComponentChanged("visual");
+            var service = new VisualPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Delete(packId);
+        }
+
+        public void ExportCustomVisualPack(string packId, string destinationZipPath)
+        {
+            var service = new VisualPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Export(packId, destinationZipPath);
+        }
+
+        public void RefreshCustomVisualPackThemeSettings()
+        {
+            try
+            {
+                anikiThemeSettingsService?.RefreshInstalledCustomVisualPacks();
+                SettingsVM?.RefreshCustomVisualPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][VisualPack] Failed to refresh Visual Pack UI state.");
+            }
+        }
+
+        public ColorPackImportResult ImportCustomColorPack(string zipFilePath)
+        {
+            var service = new ColorPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            var result = service.Import(zipFilePath, false);
+            RefreshCustomColorPackThemeSettings();
+            return result;
+        }
+
+        public ColorPackLibrarySnapshot GetCustomColorPackLibrary()
+        {
+            var service = new ColorPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            return service.GetLibrary();
+        }
+
+        public void ApplyCustomColorPack(string localId)
+        {
+            anikiThemeSettingsService?.NotifyCompletePackComponentChanged("color");
+            var service = new ColorPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.SetActivePack(localId);
+            RefreshCustomColorPackThemeSettings();
+        }
+
+        public void DeleteCustomColorPack(string localId)
+        {
+            anikiThemeSettingsService?.NotifyCompletePackComponentChanged("color");
+            var service = new ColorPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Delete(localId);
+            RefreshCustomColorPackThemeSettings();
+        }
+
+        public void ExportCustomColorPack(string localId, string destinationZipPath)
+        {
+            var service = new ColorPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Export(localId, destinationZipPath);
+        }
+
+        public void RefreshCustomColorPackThemeSettings()
+        {
+            try
+            {
+                anikiThemeSettingsService?.RefreshInstalledCustomColorPacks();
+                SettingsVM?.RefreshCustomColorPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][ColorPack] Failed to refresh Color Pack UI state.");
+            }
+        }
+
+        public LoginPackImportResult ImportLoginPack(string zipFilePath)
+        {
+            var service = new LoginPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            var result = service.Import(zipFilePath, false);
+            RefreshLoginPackThemeSettings();
+            return result;
+        }
+
+        public LoginPackLibrarySnapshot GetLoginPackLibrary()
+        {
+            var service = new LoginPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            return service.GetLibrary();
+        }
+
+        public void DeleteLoginPack(string localId)
+        {
+            anikiThemeSettingsService?.NotifyCompletePackComponentChanged("login");
+            var service = new LoginPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Delete(localId);
+            RefreshLoginPackThemeSettings();
+        }
+
+        public void ExportLoginPack(string localId, string destinationZipPath)
+        {
+            var service = new LoginPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Export(localId, destinationZipPath);
+        }
+
+        public void RefreshLoginPackThemeSettings()
+        {
+            try
+            {
+                anikiThemeSettingsService?.RefreshInstalledLoginPacks();
+                SettingsVM?.RefreshLoginPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][LoginPack] Failed to refresh Login Pack UI state.");
+            }
+        }
+
+        public SoundPackImportResult ImportSoundPack(string zipFilePath)
+        {
+            var service = new SoundPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            var result = service.Import(zipFilePath, false);
+            RefreshSoundPackThemeSettings();
+            return result;
+        }
+
+        public SoundPackLibrarySnapshot GetSoundPackLibrary()
+        {
+            var service = new SoundPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            return service.GetLibrary();
+        }
+
+        public void DeleteSoundPack(string localId)
+        {
+            anikiThemeSettingsService?.NotifyCompletePackComponentChanged("sound");
+            var service = new SoundPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Delete(localId);
+            RefreshSoundPackThemeSettings();
+        }
+
+        public void ExportSoundPack(string localId, string destinationZipPath)
+        {
+            var service = new SoundPackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Export(localId, destinationZipPath);
+        }
+
+        public void RefreshSoundPackThemeSettings()
+        {
+            try
+            {
+                anikiThemeSettingsService?.RefreshInstalledSoundPacks();
+                SettingsVM?.RefreshSoundPackLibrary();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][SoundPack] Failed to refresh Sound Pack UI state.");
+            }
+        }
+
+
+        public CompletePackImportResult ImportCompletePack(string zipFilePath)
+        {
+            var service = new CompletePackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            var result = service.Import(zipFilePath);
+            RefreshCompletePackThemeSettings();
+            return result;
+        }
+
+        public CompletePackLibrarySnapshot GetCompletePackLibrary()
+        {
+            var service = new CompletePackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            return service.GetLibrary();
+        }
+
+        public void ApplyCompletePack(string localId)
+        {
+            var service = new CompletePackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            var selection = service.PrepareApply(localId);
+            if (anikiThemeSettingsService == null)
+            {
+                throw new InvalidOperationException("Aniki ReMake theme settings are not available.");
+            }
+
+            anikiThemeSettingsService.ApplyCompletePack(selection);
+            RefreshCustomVisualPackThemeSettings();
+            RefreshCustomColorPackThemeSettings();
+            RefreshLoginPackThemeSettings();
+            RefreshSoundPackThemeSettings();
+            RefreshCompletePackThemeSettings();
+        }
+
+        public void DeleteCompletePack(string localId)
+        {
+            var service = new CompletePackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Delete(localId);
+            anikiThemeSettingsService?.RefreshInstalledCompletePacks();
+            SettingsVM?.RefreshCompletePackLibrary();
+        }
+
+        public void ExportCompletePack(string localId, string destinationZipPath)
+        {
+            var service = new CompletePackImportService(PlayniteApi, GetPluginUserDataPath(), logger);
+            service.Export(localId, destinationZipPath);
+        }
+
+        public void RefreshCompletePackThemeSettings()
+        {
+            try
+            {
+                anikiThemeSettingsService?.RefreshInstalledCompletePacks();
+                SettingsVM?.RefreshCompletePackLibrary();
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][CompletePack] Failed to refresh Complete Pack UI state.");
+            }
+        }
+
+        public AnikiCommunityVisualPacksFullscreenController CreateCommunityVisualPacksFullscreenController()
+        {
+            return new AnikiCommunityVisualPacksFullscreenController(this, PlayniteApi, GetPluginUserDataPath(), logger);
         }
 
         public void SetAnikiThemeSettingsRestartRequiredAction(Action action)
@@ -17986,7 +19198,7 @@ namespace AnikiHelper
                 return "en";
             }
 
-            lang = lang.Trim().ToLowerInvariant();
+            lang = lang.Trim().ToLowerInvariant().Replace('_', '-');
 
             if (lang.StartsWith("fr"))
             {
@@ -18008,9 +19220,44 @@ namespace AnikiHelper
                 return "it";
             }
 
+            if (lang.StartsWith("pl"))
+            {
+                return "pl";
+            }
+
+            if (lang.StartsWith("bg"))
+            {
+                return "bg";
+            }
+
+            if (lang.StartsWith("cs"))
+            {
+                return "cs";
+            }
+
+            if (lang.StartsWith("el"))
+            {
+                return "el";
+            }
+
+            if (lang.StartsWith("ru"))
+            {
+                return "ru";
+            }
+
+            if (lang.StartsWith("tr"))
+            {
+                return "tr";
+            }
+
+            if (lang.StartsWith("pt-br"))
+            {
+                return "pt-br";
+            }
+
             if (lang.StartsWith("pt"))
             {
-                return "pt";
+                return "pt-pt";
             }
 
             return "en";
@@ -19342,6 +20589,31 @@ namespace AnikiHelper
             }
         }
 
+        private bool IsProcessForeground(int processId)
+        {
+            if (processId <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                var foregroundHandle = GetForegroundWindow();
+                if (foregroundHandle == IntPtr.Zero)
+                {
+                    return false;
+                }
+
+                uint foregroundProcessId;
+                GetWindowThreadProcessId(foregroundHandle, out foregroundProcessId);
+                return foregroundProcessId == (uint)processId;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private async Task RunPostLaunchFocusWatchdogAsync(
             Game game,
             int startedProcessId,
@@ -19866,6 +21138,7 @@ namespace AnikiHelper
                 if (isAnikiThemeActive)
                 {
                     HookApplicationAudioFocusEvents();
+                    HookPlayniteControllerPreProcessGuard();
                 }
 
                 var delayApplicationStartedSoundUntilAfterVideo = isAnikiThemeActive && Settings.StartupIntroVideoEnabled;
@@ -20136,6 +21409,7 @@ namespace AnikiHelper
                 }
 
                 var generation = Interlocked.Increment(ref startupFocusRecoveryGeneration);
+                startupLibraryFocusRecovered = false;
 
                 dispatcher.InvokeAsync(async () =>
                 {
@@ -20221,23 +21495,50 @@ namespace AnikiHelper
                     return;
                 }
 
-                bool hasValidFocus = HasValidMainWindowKeyboardFocus(main);
+                // Playnite itself selects the first game and raises GameListFocused during
+                // Fullscreen initialization. Aniki's startup layout can run another focus pass
+                // afterwards and leave keyboard focus on the top bar instead. When startup is
+                // going directly to Library, restore the real selected game item once. Do not
+                // do this while Login, Welcome Hub or First Setup owns the screen.
+                bool shouldRestoreLibraryItem =
+                    !startupLibraryFocusRecovered &&
+                    IsDirectLibraryStartupFocusTarget(main);
 
-                if (hasValidFocus && IsPlayniteForegroundWindow())
+                bool hasValidFocus = HasValidMainWindowKeyboardFocus(main);
+                bool playniteIsForeground = IsPlayniteForegroundWindow();
+
+                if (!shouldRestoreLibraryItem && hasValidFocus && playniteIsForeground)
                 {
                     return;
                 }
 
-                var handle = new WindowInteropHelper(main).Handle;
-
-                try
+                // Never create a WPF-only focus state while another process still owns the
+                // Windows foreground. SetForegroundWindow can legitimately fail because of
+                // Windows foreground-lock rules; in that case keep retrying later instead of
+                // calling Activate/Focus/MoveFocus on a background Playnite window.
+                if (!playniteIsForeground)
                 {
-                    if (handle != IntPtr.Zero)
+                    var handle = new WindowInteropHelper(main).Handle;
+
+                    try
                     {
-                        SetForegroundWindow(handle);
+                        if (handle != IntPtr.Zero)
+                        {
+                            SetForegroundWindow(handle);
+                        }
+                    }
+                    catch { }
+
+                    playniteIsForeground = IsPlayniteForegroundWindow();
+                    if (!playniteIsForeground)
+                    {
+                        DebugLog(
+                            $"[AnikiHelper][StartupFocusRecovery] {context} deferred | " +
+                            $"Reason=PlayniteNotForeground | validFocus={HasValidMainWindowKeyboardFocus(main)} | " +
+                            $"ForegroundProcess='{GetForegroundProcessNameSafe()}'");
+                        return;
                     }
                 }
-                catch { }
 
                 try
                 {
@@ -20246,9 +21547,18 @@ namespace AnikiHelper
                 }
                 catch { }
 
+                if (shouldRestoreLibraryItem && TryFocusSelectedLibraryGame(main))
+                {
+                    startupLibraryFocusRecovered = true;
+                    DebugLog(
+                        $"[AnikiHelper][StartupFocusRecovery] {context} | Library selected item restored | " +
+                        $"foreground={IsPlayniteForegroundWindow()} | validFocus={HasValidMainWindowKeyboardFocus(main)}");
+                    return;
+                }
+
                 // Last pass: if WPF still has no valid focused element, ask WPF to focus the first
-                // visible/focusable element in the current screen. This is intentionally generic:
-                // Login screen, Hub, and Library keep their own natural focus target.
+                // visible/focusable element in the current screen. Login and Hub keep their own
+                // natural focus target because the Library-specific pass above is disabled there.
                 try
                 {
                     if (!HasValidMainWindowKeyboardFocus(main))
@@ -20270,6 +21580,111 @@ namespace AnikiHelper
             catch (Exception ex)
             {
                 logger.Warn(ex, $"[AnikiHelper] Startup focus recovery pass failed ({context}).");
+            }
+        }
+
+        private bool IsDirectLibraryStartupFocusTarget(Window main)
+        {
+            try
+            {
+                if (main == null || Settings == null)
+                {
+                    return false;
+                }
+
+                if (Settings.IsWelcomeHubOpen ||
+                    Settings.IsWelcomeHubClosing ||
+                    Settings.FirstSetup?.IsActive == true)
+                {
+                    return false;
+                }
+
+                // The login screen lives inside Playnite's main window, so it is not caught by
+                // GetVisibleBlockingSecondaryWindow(). Never steal its startup focus.
+                var login = FindVisualChildByName<FrameworkElement>(main, "AcceuilSettings");
+                if (login?.IsVisible == true)
+                {
+                    return false;
+                }
+
+                var missingThemeView = FindVisualChildByName<FrameworkElement>(main, "TOMissing");
+                if (missingThemeView?.IsVisible == true)
+                {
+                    return false;
+                }
+
+                return GetVisibleLibraryGameList(main) != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static ListBox GetVisibleLibraryGameList(DependencyObject root)
+        {
+            try
+            {
+                var gridList = FindVisualChildByName<ListBox>(root, "PART_ListGameItems");
+                if (gridList?.IsVisible == true && gridList.IsEnabled && gridList.Items.Count > 0)
+                {
+                    return gridList;
+                }
+
+                var detailedList = FindVisualChildByName<ListBox>(root, "PART_ListGameItemsDetailed");
+                if (detailedList?.IsVisible == true && detailedList.IsEnabled && detailedList.Items.Count > 0)
+                {
+                    return detailedList;
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static bool TryFocusSelectedLibraryGame(DependencyObject root)
+        {
+            var list = GetVisibleLibraryGameList(root);
+            if (list == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var targetItem = list.SelectedItem ?? (list.Items.Count > 0 ? list.Items[0] : null);
+                if (targetItem == null)
+                {
+                    return false;
+                }
+
+                list.ScrollIntoView(targetItem);
+                list.UpdateLayout();
+
+                var container = list.ItemContainerGenerator.ContainerFromItem(targetItem) as ListBoxItem;
+                if (container != null && container.IsVisible && container.IsEnabled && container.Focusable)
+                {
+                    container.BringIntoView();
+                    container.Focus();
+                    Keyboard.Focus(container);
+
+                    var focusScope = FocusManager.GetFocusScope(container);
+                    FocusManager.SetFocusedElement(focusScope, container);
+
+                    return container.IsKeyboardFocusWithin || ReferenceEquals(Keyboard.FocusedElement, container);
+                }
+
+                // On the very first layout pass the selected container can still be unrealized.
+                // Focusing the list is a safe fallback; a later startup retry will target the item.
+                list.Focus();
+                Keyboard.Focus(list);
+                return false;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -21626,10 +23041,11 @@ namespace AnikiHelper
                 PlayniteApi.ApplicationInfo.Mode == ApplicationMode.Fullscreen &&
                 IsAnikiThemeActive();
 
-            // The in-game layer always gets first refusal. Guide/overlay shortcuts,
-            // virtual keyboard and controller mouse must keep working while the game
-            // owns foreground. Anything the in-game layer does NOT consume is blocked
-            // before it can reach Aniki/Playnite background UI.
+            // The WPF PreProcessInput guard already cancels Playnite's own background
+            // navigation before native routing. This SDK callback is raised afterwards, so
+            // the in-game layer still gets first refusal for Guide/overlay shortcuts, virtual
+            // keyboard and controller mouse. Anything it does not consume is blocked here
+            // from the rest of Aniki Helper.
             if (allowInGameOverlay &&
                 inGameOverlayService != null &&
                 inGameOverlayService.HandleControllerButtonStateChanged(args))
@@ -21648,9 +23064,17 @@ namespace AnikiHelper
                         $"[AnikiHelper][ControllerGuard] BLOCKED {args.Button} | " +
                         $"State={args.State} | GameRunningOrLaunching=True | " +
                         $"ForegroundProcess='{GetForegroundProcessNameSafe()}' | " +
-                        "Reason=Game owns foreground; input was not consumed by in-game services.");
+                        "Reason=Game owns foreground; Playnite WPF input is guarded in PreProcess and input was not consumed by in-game services.");
                 }
 
+                return;
+            }
+
+            // Controller B fallback for PlayniteAchievements category/DLC navigation.
+            // Outside a visible BackToCategoryButton this returns false and B keeps its
+            // normal behavior everywhere else.
+            if (TryHandleAchievementCategoryBack(args))
+            {
                 return;
             }
 
@@ -21864,6 +23288,7 @@ namespace AnikiHelper
         public override void OnApplicationStopped(OnApplicationStoppedEventArgs args)
         {
             CancelEmergencyCloseHold();
+            UnhookPlayniteControllerPreProcessGuard();
             UnhookApplicationAudioFocusEvents();
             global::AnikiHelper.AnikiLog.Debug(logger, "AnikiHelper shutdown: start");
 
@@ -22185,6 +23610,10 @@ namespace AnikiHelper
                     $"SelectedGame='{game.Name}', Id={game.Id}"
                 );
 
+                // DuplicateHider is displayed in Details View only, so do the
+                // reflection/GetCopies lookup here instead of on every Main View scroll step.
+                Settings?.RefreshDuplicateHiderAvailability(game);
+
                 Settings?.ClearCurrentGameMediaState();
 
                 DebugLog("[AnikiHelper][FullscreenViewChanged][Media] Current game media state cleared. Screenshots will load only when the screenshot window is opened.");
@@ -22297,11 +23726,14 @@ namespace AnikiHelper
 
             Settings?.UpdateSelectedGameInstallSizeNoDecimal(g);
 
-            Settings?.RefreshDuplicateHiderAvailability(g);
+            // DuplicateHider availability is only used by the Details View.
+            // Avoid reflection + GetCopies on every Main View selection while browsing.
             DynamicAuto.NotifyGameSelected(g);
 
             if (g == null)
             {
+                try { Settings?.RefreshDuplicateHiderAvailability(null); } catch { }
+
                 try
                 {
                     if (Settings != null)
@@ -22397,6 +23829,7 @@ namespace AnikiHelper
 
             if (isInFullscreenDetailsView)
             {
+                Settings?.RefreshDuplicateHiderAvailability(g);
                 UpdateSteamFriendsDetailsForGame(g);
             }
 
@@ -22704,6 +24137,18 @@ namespace AnikiHelper
                         "ExactProcess");
                 }
 
+                // Xbox/Gaming Services, launch scripts and several PC launchers can make
+                // Playnite report a short-lived launcher PID while the real game starts as a
+                // different process. Search for a newly-ready process inside the game's install
+                // directory before relying on the Windows foreground process. This still uses
+                // the normal ready-window gates and the launch baseline, so unrelated old
+                // processes in the same directory cannot satisfy the splash by themselves.
+                var installDirectoryCandidate = TryGetInstallDirectoryGameReadyCandidate(game, startedProcessId, baseline);
+                if (installDirectoryCandidate != null)
+                {
+                    return installDirectoryCandidate;
+                }
+
                 return TryGetForegroundGameReadyFallbackCandidate(game, startedProcessId);
             }
             catch (Exception ex)
@@ -22840,6 +24285,144 @@ namespace AnikiHelper
                 }
 
                 return gameReadyLaunchBaseline;
+            }
+        }
+
+        private SplashScreenRuntimeService.GameReadyCandidate TryGetInstallDirectoryGameReadyCandidate(
+            Game game,
+            int? startedProcessId,
+            GameReadyLaunchBaseline baseline)
+        {
+            if (game == null || baseline == null)
+            {
+                return null;
+            }
+
+            var installDirectory = NormalizeGameReadyInstallDirectory(game.InstallDirectory);
+            if (string.IsNullOrWhiteSpace(installDirectory))
+            {
+                return null;
+            }
+
+            SplashScreenRuntimeService.GameReadyCandidate candidate = null;
+            var inspectedProcessIds = new HashSet<int>();
+            var ownProcessId = Process.GetCurrentProcess().Id;
+
+            try
+            {
+                EnumWindows((hWnd, lParam) =>
+                {
+                    try
+                    {
+                        if (hWnd == IntPtr.Zero || !IsWindowVisible(hWnd) || IsIconic(hWnd))
+                        {
+                            return true;
+                        }
+
+                        uint rawProcessId;
+                        GetWindowThreadProcessId(hWnd, out rawProcessId);
+                        if (rawProcessId == 0 || rawProcessId > int.MaxValue)
+                        {
+                            return true;
+                        }
+
+                        var processId = (int)rawProcessId;
+                        if (processId == ownProcessId ||
+                            (startedProcessId.HasValue && processId == startedProcessId.Value))
+                        {
+                            return true;
+                        }
+
+                        string transition;
+                        if (!IsGameReadyLaunchTransition(baseline, processId, hWnd, out transition))
+                        {
+                            return true;
+                        }
+
+                        if (!inspectedProcessIds.Add(processId))
+                        {
+                            return true;
+                        }
+
+                        using (var process = Process.GetProcessById(processId))
+                        {
+                            if (process.HasExited ||
+                                IsIgnoredGameReadyProcess(process.ProcessName) ||
+                                !IsGameReadyProcessInsideDirectory(process, installDirectory) ||
+                                !IsUsableGameReadyWindow(hWnd, processId, baseline))
+                            {
+                                return true;
+                            }
+
+                            DebugLogGameReadyDiagnostic(
+                                $"InstallDirectory:{processId}:{hWnd}:Pass:{transition}",
+                                $"[AnikiHelper][Splash][GameReady][InstallDirectoryProcess][Pass] " +
+                                $"Game='{game.Name}', PID={processId}, Process='{process.ProcessName}', " +
+                                $"Handle=0x{hWnd.ToInt64():X}, Transition={transition}, InstallDirectory='{installDirectory}'");
+
+                            candidate = new SplashScreenRuntimeService.GameReadyCandidate(
+                                processId,
+                                hWnd,
+                                "InstallDirectoryProcess:" + transition);
+
+                            return false;
+                        }
+                    }
+                    catch
+                    {
+                        // Protected/exiting processes are normal while launchers hand off.
+                        return true;
+                    }
+                }, IntPtr.Zero);
+            }
+            catch
+            {
+                return null;
+            }
+
+            return candidate;
+        }
+
+        private static string NormalizeGameReadyInstallDirectory(string installDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(installDirectory))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Path.GetFullPath(installDirectory)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+                    Path.DirectorySeparatorChar;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsGameReadyProcessInsideDirectory(Process process, string normalizedDirectory)
+        {
+            if (process == null || string.IsNullOrWhiteSpace(normalizedDirectory))
+            {
+                return false;
+            }
+
+            try
+            {
+                var executablePath = process.MainModule?.FileName;
+                if (string.IsNullOrWhiteSpace(executablePath))
+                {
+                    return false;
+                }
+
+                var fullExecutablePath = Path.GetFullPath(executablePath);
+                return fullExecutablePath.StartsWith(normalizedDirectory, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -24560,25 +26143,27 @@ namespace AnikiHelper
                             DebugLog($"[AnikiHelper][Splash][CloseAfterGameStartedTask][Result] Auto game ready close finished. Game='{g?.Name ?? "NULL"}'");
     
                             var confirmedCandidate = GetGameLaunchSplashReadyCandidate(g, startedProcessId);
-                            if (confirmedCandidate != null &&
-                                startedProcessId.HasValue &&
-                                confirmedCandidate.ProcessId == startedProcessId.Value &&
-                                IsPlayniteForegroundWindow())
+                            if (confirmedCandidate != null)
                             {
-                                DebugLog(
-                                    $"[AnikiHelper][Splash][GameReady][FocusHandoff] " +
-                                    $"Game='{g?.Name ?? "NULL"}', PID={confirmedCandidate.ProcessId}, " +
-                                    $"Handle=0x{confirmedCandidate.WindowHandle.ToInt64():X}, Source={confirmedCandidate.Source}, Action=ReturnToGame");
-    
-                                await Task.Delay(120);
-                                inGameOverlayService?.ReturnToGame();
-    
+                                var candidateOwnsForeground = IsProcessForeground(confirmedCandidate.ProcessId);
+                                if (!candidateOwnsForeground)
+                                {
+                                    DebugLog(
+                                        $"[AnikiHelper][Splash][GameReady][FocusHandoff] " +
+                                        $"Game='{g?.Name ?? "NULL"}', PID={confirmedCandidate.ProcessId}, " +
+                                        $"Handle=0x{confirmedCandidate.WindowHandle.ToInt64():X}, Source={confirmedCandidate.Source}, " +
+                                        $"ForegroundProcess='{GetForegroundProcessNameSafe()}', Action=ReturnToGame");
+
+                                    await Task.Delay(120);
+                                    inGameOverlayService?.ReturnToGame();
+                                }
+
                                 // Some launchers hand focus back to Playnite a few seconds after
-                                // the real game window is already ready. Watch this short startup
-                                // window and perform at most one additional ReturnToGame retry.
+                                // the real game window is already ready. Watch the confirmed real
+                                // process (which may differ from Playnite's StartedProcessId).
                                 _ = RunPostLaunchFocusWatchdogAsync(
                                     g,
-                                    startedProcessId.Value,
+                                    confirmedCandidate.ProcessId,
                                     confirmedCandidate.WindowHandle);
                             }
     

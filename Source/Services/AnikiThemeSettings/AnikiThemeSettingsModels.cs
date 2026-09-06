@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 
 namespace AnikiHelper.Services.AnikiThemeSettings
@@ -33,14 +34,47 @@ namespace AnikiHelper.Services.AnikiThemeSettings
 
         public string Category { get; set; }
 
+        public int Order { get; set; } = 999;
+
         public bool NeedRestart { get; set; }
+
+        public string FilterBy { get; set; }
+
+        public string DisableSelectionWhenFilterValue { get; set; }
+
+        public string EmptySelectionLocKey { get; set; }
 
         public Dictionary<string, AnikiPresetItem> Presets { get; set; }
             = new Dictionary<string, AnikiPresetItem>(StringComparer.OrdinalIgnoreCase);
 
         [DontSerialize]
         public ObservableCollection<AnikiPresetItem> Items { get; set; }
-            = new ObservableCollection<AnikiPresetItem>();   
+            = new ObservableCollection<AnikiPresetItem>();
+
+        [DontSerialize]
+        public ObservableCollection<AnikiPresetItem> FilteredItems { get; set; }
+            = new ObservableCollection<AnikiPresetItem>();
+
+        private bool isSelectionEnabled = true;
+
+        [DontSerialize]
+        public bool IsSelectionEnabled
+        {
+            get => isSelectionEnabled;
+            set => SetValue(ref isSelectionEnabled, value);
+        }
+
+        private bool hasVisibleSelection = true;
+
+        [DontSerialize]
+        public bool HasVisibleSelection
+        {
+            get => hasVisibleSelection;
+            set => SetValue(ref hasVisibleSelection, value);
+        }
+
+        [DontSerialize]
+        public string EmptySelectionText { get; set; }
 
         private string selectedPresetKey;
 
@@ -58,6 +92,7 @@ namespace AnikiHelper.Services.AnikiThemeSettings
                 }
 
                 SetValue(ref selectedPresetKey, finalValue);
+                UpdateVisibleSelectionState(finalValue);
                 SelectionChangedAction?.Invoke(Id, finalValue);
             }
         }
@@ -112,7 +147,16 @@ namespace AnikiHelper.Services.AnikiThemeSettings
         public void SetSelectedPresetKeySilently(string value)
         {
             selectedPresetKey = value ?? string.Empty;
+            UpdateVisibleSelectionState(selectedPresetKey);
             OnPropertyChanged(nameof(SelectedPresetKey));
+        }
+
+        private void UpdateVisibleSelectionState(string value)
+        {
+            HasVisibleSelection = !string.IsNullOrWhiteSpace(value) &&
+                                  FilteredItems != null &&
+                                  FilteredItems.Any(item => item != null &&
+                                      string.Equals(item.Key, value, StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -131,6 +175,12 @@ namespace AnikiHelper.Services.AnikiThemeSettings
         public string LocKey { get; set; }
 
         public string Category { get; set; }
+
+        public string VisualPackCategory { get; set; }
+
+        // Generic category used by any preset group with FilterBy. The legacy
+        // VisualPackCategory property remains supported by the service.
+        public string FilterValue { get; set; }
 
         public string Preview { get; set; }
 
@@ -204,6 +254,9 @@ namespace AnikiHelper.Services.AnikiThemeSettings
 
         public string Category { get; set; }
 
+        // Keeps the option available to the runtime while hiding it from the settings UI.
+        public bool Hidden { get; set; }
+
         public string Preview { get; set; }
 
         public string Style { get; set; }
@@ -214,11 +267,21 @@ namespace AnikiHelper.Services.AnikiThemeSettings
 
         public int CategoryOrder { get; set; } = 999;
 
+        public int Order { get; set; } = 999;
+
         public bool NeedRestart { get; set; }
 
         public string DependsOn { get; set; }
 
         public object DependsOnValue { get; set; } = true;
+
+        public object DependsOnNotValue { get; set; }
+
+        public string DependsOn2 { get; set; }
+
+        public object DependsOn2Value { get; set; } = true;
+
+        public object DependsOn2NotValue { get; set; }
 
         public bool AutoDisableWhenDependencyMissing { get; set; } = true;
 
@@ -226,6 +289,9 @@ namespace AnikiHelper.Services.AnikiThemeSettings
         public string DependencyMessage { get; set; }
 
         public AnikiThemeSlider Slider { get; set; }
+
+        public List<AnikiThemeChoiceItem> Choices { get; set; }
+            = new List<AnikiThemeChoiceItem>();
 
         private bool isEnabled = true;
 
@@ -277,6 +343,19 @@ namespace AnikiHelper.Services.AnikiThemeSettings
         {
             get
             {
+                if (string.Equals(Type, "Choice", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Type, "Enum", StringComparison.OrdinalIgnoreCase))
+                {
+                    var selectedChoice = Choices?.FirstOrDefault(choice =>
+                        choice != null &&
+                        string.Equals(choice.Value, CurrentStringValue, StringComparison.OrdinalIgnoreCase));
+
+                    if (selectedChoice?.HasDescriptionOverride == true)
+                    {
+                        return selectedChoice.DisplayDescription;
+                    }
+                }
+
                 if (!string.IsNullOrWhiteSpace(LocalizedDescription))
                 {
                     return LocalizedDescription;
@@ -362,6 +441,7 @@ namespace AnikiHelper.Services.AnikiThemeSettings
                 }
 
                 SetValue(ref currentStringValue, finalValue);
+                OnPropertyChanged(nameof(DisplayDescription));
                 ValueChangedAction?.Invoke(Id, finalValue);
             }
         }
@@ -388,6 +468,72 @@ namespace AnikiHelper.Services.AnikiThemeSettings
         {
             currentStringValue = value ?? string.Empty;
             OnPropertyChanged(nameof(CurrentStringValue));
+            OnPropertyChanged(nameof(DisplayDescription));
+        }
+    }
+
+    public class AnikiThemeChoiceItem
+    {
+        public string Value { get; set; }
+
+        public string Name { get; set; }
+
+        public string Title { get; set; }
+
+        public string LocKey { get; set; }
+
+        public string Description { get; set; }
+
+        public string DescriptionLocKey { get; set; }
+
+        public string Preview { get; set; }
+
+        [DontSerialize]
+        public string LocalizedName { get; set; }
+
+        [DontSerialize]
+        public string LocalizedDescription { get; set; }
+
+        [DontSerialize]
+        public bool HasDescriptionOverride =>
+            Description != null || DescriptionLocKey != null;
+
+        [DontSerialize]
+        public string DisplayName
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(LocalizedName))
+                {
+                    return LocalizedName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(Title))
+                {
+                    return Title;
+                }
+
+                if (!string.IsNullOrWhiteSpace(Name))
+                {
+                    return Name;
+                }
+
+                return Value ?? string.Empty;
+            }
+        }
+
+        [DontSerialize]
+        public string DisplayDescription
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(LocalizedDescription))
+                {
+                    return LocalizedDescription;
+                }
+
+                return Description;
+            }
         }
     }
 

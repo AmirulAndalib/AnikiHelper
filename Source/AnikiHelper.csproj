@@ -64,6 +64,8 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Security" />
     <Reference Include="System.Xaml" />
@@ -88,6 +90,7 @@
     <Compile Include="Services\AnikiThemeSettings\AnikiDynamicProperties.cs" />
     <Compile Include="Services\AnikiThemeSettings\AnikiThemeSettingsModels.cs" />
     <Compile Include="Services\AnikiThemeSettings\AnikiThemeSettingsService.cs" />
+    <Compile Include="Services\AnikiThemeSettings\LoginBackgroundMediaService.cs" />
     <Compile Include="Services\DuplicateHider\AnikiDuplicateHiderGameItem.cs" />
     <Compile Include="Services\Diagnostics\AnikiLog.cs" />
     <Compile Include="Services\EasterEgg\KonamiCodeService.cs" />
@@ -192,9 +195,22 @@
     <Compile Include="Services\SteamFriends\SteamFriendsWebApiClient.cs" />
     <Compile Include="Services\News\SteamUpdateLiteService.cs" />
     <Compile Include="Services\UI\VisualPackBackgroundComposer.cs" />
+    <Compile Include="Services\VisualPacks\VisualPackImportService.cs" />
+    <Compile Include="Services\VisualPacks\CommunityVisualPackService.cs" />
+    <Compile Include="Services\ColorPacks\ColorPackImportService.cs" />
+    <Compile Include="Services\LoginPacks\LoginPackImportService.cs" />
+    <Compile Include="Services\SoundPacks\SoundPackImportService.cs" />
+    <Compile Include="Services\CompletePacks\CompletePackImportService.cs" />
+    <Compile Include="Services\CommunityPacks\CommunityPackService.cs" />
+    <Compile Include="Services\CommunityPacks\CommunityPackPreviewHelper.cs" />
+    <Compile Include="Services\Packs\AnikiPackStorage.cs" />
     <Compile Include="Views\AnikiHelperSettingsView.xaml.cs">
       <DependentUpon>AnikiHelperSettingsView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Views\AnikiCommunityVisualPacksView.xaml.cs">
+      <DependentUpon>AnikiCommunityVisualPacksView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\AnikiCommunityVisualPacksFullscreenController.cs" />
     <Compile Include="Views\AnikiVideoLibraryManagerView.xaml.cs">
       <DependentUpon>AnikiVideoLibraryManagerView.xaml</DependentUpon>
     </Compile>
@@ -251,9 +267,48 @@
       <SubType>Designer</SubType>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="Localization\bg_BG.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Localization\cs_CZ.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Localization\el_GR.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Localization\it_IT.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Localization\ru_RU.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Localization\tr_TR.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <Resource Include="Views\AnikiThemeSettingsFullscreenView.xaml" />
     <Resource Include="Views\AnikiHelperFullscreenSettingsView.xaml" />
+    <None Include="Localization\pl_PL.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <Page Include="Views\AnikiHelperSettingsView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Resource Include="Views\AnikiCommunityVisualPacksFullscreenView.xaml" />
+    <Page Include="Views\AnikiCommunityVisualPacksView.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
@@ -275,6 +330,7 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
+    <Resource Include="Assets\CommunityPackFallback.png" />
     <None Include="icon.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -290,47 +346,27 @@
   <Import Project="packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\VideoLAN.LibVLC.Windows.targets" Condition="Exists('packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\VideoLAN.LibVLC.Windows.targets')" />
   <Import Project="packages\Microsoft.Web.WebView2.1.0.4078.44\build\Microsoft.Web.WebView2.targets" Condition="Exists('packages\Microsoft.Web.WebView2.1.0.4078.44\build\Microsoft.Web.WebView2.targets')" />
   <Target Name="EnsureLibVLCNuGetPackages" BeforeTargets="PrepareForBuild">
-    <Error Condition="!Exists('packages\LibVLCSharp.3.9.7.1\lib\net40\LibVLCSharp.dll')"
-           Text="LibVLCSharp 3.9.7.1 is missing. Restore NuGet packages before building Aniki Helper." />
-    <Error Condition="!Exists('packages\LibVLCSharp.WPF.3.9.7.1\lib\net461\LibVLCSharp.WPF.dll')"
-           Text="LibVLCSharp.WPF 3.9.7.1 is missing. Restore NuGet packages before building Aniki Helper." />
-    <Error Condition="!Exists('packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\VideoLAN.LibVLC.Windows.targets')"
-           Text="VideoLAN.LibVLC.Windows 3.0.23.1 is missing. Restore NuGet packages before building Aniki Helper." />
-    <Error Condition="!Exists('packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\x86\libvlc.dll')"
-           Text="VideoLAN.LibVLC.Windows x86 native files are missing or incomplete. Clear the NuGet cache and restore packages." />
-    <Error Condition="!Exists('packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\x64\libvlc.dll')"
-           Text="VideoLAN.LibVLC.Windows x64 native files are missing or incomplete. Clear the NuGet cache and restore packages." />
+    <Error Condition="!Exists('packages\LibVLCSharp.3.9.7.1\lib\net40\LibVLCSharp.dll')" Text="LibVLCSharp 3.9.7.1 is missing. Restore NuGet packages before building Aniki Helper." />
+    <Error Condition="!Exists('packages\LibVLCSharp.WPF.3.9.7.1\lib\net461\LibVLCSharp.WPF.dll')" Text="LibVLCSharp.WPF 3.9.7.1 is missing. Restore NuGet packages before building Aniki Helper." />
+    <Error Condition="!Exists('packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\VideoLAN.LibVLC.Windows.targets')" Text="VideoLAN.LibVLC.Windows 3.0.23.1 is missing. Restore NuGet packages before building Aniki Helper." />
+    <Error Condition="!Exists('packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\x86\libvlc.dll')" Text="VideoLAN.LibVLC.Windows x86 native files are missing or incomplete. Clear the NuGet cache and restore packages." />
+    <Error Condition="!Exists('packages\VideoLAN.LibVLC.Windows.3.0.23.1\build\x64\libvlc.dll')" Text="VideoLAN.LibVLC.Windows x64 native files are missing or incomplete. Clear the NuGet cache and restore packages." />
   </Target>
   <Target Name="EnsureWebView2NuGetPackage" BeforeTargets="PrepareForBuild">
-    <Error Condition="!Exists('packages\Microsoft.Web.WebView2.1.0.4078.44\build\Microsoft.Web.WebView2.targets')"
-           Text="Microsoft.Web.WebView2 1.0.4078.44 is missing. Restore NuGet packages before building Aniki Helper." />
+    <Error Condition="!Exists('packages\Microsoft.Web.WebView2.1.0.4078.44\build\Microsoft.Web.WebView2.targets')" Text="Microsoft.Web.WebView2 1.0.4078.44 is missing. Restore NuGet packages before building Aniki Helper." />
   </Target>
-
   <!-- Copy x86/x64 LibVLC files without rewriting unchanged files. -->
   <Target Name="CopyAnikiLibVlcNativeFiles" AfterTargets="Build">
     <PropertyGroup>
       <AnikiLibVlcPackageBuildDir>$(MSBuildProjectDirectory)\packages\VideoLAN.LibVLC.Windows.3.0.23.1\build</AnikiLibVlcPackageBuildDir>
     </PropertyGroup>
-
     <ItemGroup>
       <AnikiLibVlcX86Files Include="$(AnikiLibVlcPackageBuildDir)\x86\**\*.*" Condition="Exists('$(AnikiLibVlcPackageBuildDir)\x86\libvlc.dll')" />
       <AnikiLibVlcX64Files Include="$(AnikiLibVlcPackageBuildDir)\x64\**\*.*" Condition="Exists('$(AnikiLibVlcPackageBuildDir)\x64\libvlc.dll')" />
     </ItemGroup>
-
     <Message Importance="high" Text="[AnikiHelper] Syncing native LibVLC x86 files (unchanged files skipped)." Condition="'@(AnikiLibVlcX86Files)' != ''" />
-    <Copy SourceFiles="@(AnikiLibVlcX86Files)"
-          DestinationFiles="@(AnikiLibVlcX86Files->'$(TargetDir)libvlc\win-x86\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          Retries="2"
-          RetryDelayMilliseconds="100"
-          Condition="'@(AnikiLibVlcX86Files)' != ''" />
-
+    <Copy SourceFiles="@(AnikiLibVlcX86Files)" DestinationFiles="@(AnikiLibVlcX86Files->'$(TargetDir)libvlc\win-x86\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Retries="2" RetryDelayMilliseconds="100" Condition="'@(AnikiLibVlcX86Files)' != ''" />
     <Message Importance="high" Text="[AnikiHelper] Syncing native LibVLC x64 files (unchanged files skipped)." Condition="'@(AnikiLibVlcX64Files)' != ''" />
-    <Copy SourceFiles="@(AnikiLibVlcX64Files)"
-          DestinationFiles="@(AnikiLibVlcX64Files->'$(TargetDir)libvlc\win-x64\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          Retries="2"
-          RetryDelayMilliseconds="100"
-          Condition="'@(AnikiLibVlcX64Files)' != ''" />
+    <Copy SourceFiles="@(AnikiLibVlcX64Files)" DestinationFiles="@(AnikiLibVlcX64Files->'$(TargetDir)libvlc\win-x64\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Retries="2" RetryDelayMilliseconds="100" Condition="'@(AnikiLibVlcX64Files)' != ''" />
   </Target>
 </Project>

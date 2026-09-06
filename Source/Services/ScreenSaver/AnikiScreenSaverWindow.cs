@@ -20,6 +20,8 @@ namespace AnikiHelper.Services.ScreenSaver
         private readonly TextBlock logoFallbackTitle;
         private readonly StackPanel logoPanel;
         private readonly Border infoCard;
+        private readonly Grid infoCardGlassRoot;
+        private readonly VisualBrush infoCardBackdropBrush;
         private readonly TextBlock gameTitle;
         private readonly TextBlock playtimeLabel;
         private readonly TextBlock playtimeValue;
@@ -106,7 +108,7 @@ namespace AnikiHelper.Services.ScreenSaver
             logoImage = new Image
             {
                 Stretch = Stretch.Uniform,
-                MaxWidth = 620,
+                MaxWidth = 570,
                 MaxHeight = 230,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Bottom,
@@ -187,27 +189,98 @@ namespace AnikiHelper.Services.ScreenSaver
             infoContent.Children.Add(infoGrid);
             infoContent.Children.Add(statusText);
 
+            infoCardBackdropBrush = new VisualBrush
+            {
+                Visual = backgroundImage,
+                ViewboxUnits = BrushMappingMode.Absolute,
+                ViewportUnits = BrushMappingMode.RelativeToBoundingBox,
+                Stretch = Stretch.Fill,
+                AlignmentX = AlignmentX.Left,
+                AlignmentY = AlignmentY.Top
+            };
+
+            var frostedBackdrop = new Border
+            {
+                Margin = new Thickness(-28),
+                Background = infoCardBackdropBrush,
+                IsHitTestVisible = false,
+                Effect = new BlurEffect
+                {
+                    Radius = 11,
+                    KernelType = KernelType.Gaussian,
+                    RenderingBias = RenderingBias.Performance
+                }
+            };
+
+            var glassTint = new Border
+            {
+                Background = new LinearGradientBrush(
+                    new GradientStopCollection
+                    {
+                        new GradientStop(Color.FromArgb(26, 34, 40, 54), 0),
+                        new GradientStop(Color.FromArgb(34, 14, 19, 29), 0.52),
+                        new GradientStop(Color.FromArgb(44, 7, 10, 17), 1)
+                    },
+                    new Point(0.15, 0),
+                    new Point(0.85, 1)),
+                IsHitTestVisible = false
+            };
+
+            var themeDarken = new Border
+            {
+                Background = new SolidColorBrush(
+                Color.FromArgb(128, 0, 0, 0)),
+                IsHitTestVisible = false
+            };
+
+            var glassHighlight = new Border
+            {
+                Background = new LinearGradientBrush(
+                    Color.FromArgb(8, 255, 255, 255),
+                    Color.FromArgb(0, 255, 255, 255),
+                    new Point(0, 0),
+                    new Point(0.7, 0.75)),
+                IsHitTestVisible = false
+            };
+
+            var infoContentHost = new Border
+            {
+                Padding = new Thickness(28, 24, 28, 24),
+                Background = Brushes.Transparent,
+                Child = infoContent
+            };
+
+            infoCardGlassRoot = new Grid();
+            infoCardGlassRoot.Children.Add(frostedBackdrop);
+            infoCardGlassRoot.Children.Add(glassTint);
+            infoCardGlassRoot.Children.Add(themeDarken);
+            infoCardGlassRoot.Children.Add(glassHighlight);
+            infoCardGlassRoot.Children.Add(infoContentHost);
+
             infoCard = new Border
             {
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Bottom,
                 Margin = new Thickness(0, 0, 68, 66),
                 Width = 455,
-                Padding = new Thickness(28, 24, 28, 24),
                 CornerRadius = new CornerRadius(18),
-                Background = new SolidColorBrush(Color.FromArgb(205, 10, 14, 22)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
+                Background = Brushes.Transparent,
+                BorderBrush = ResolveThemeBrush(
+                    "MenuBorderBrush",
+                    new SolidColorBrush(Color.FromArgb(92, 255, 255, 255))),
                 BorderThickness = new Thickness(1),
-                Child = infoContent,
+                Child = infoCardGlassRoot,
                 IsHitTestVisible = false,
                 Effect = new DropShadowEffect
                 {
                     Color = Colors.Black,
-                    BlurRadius = 30,
-                    ShadowDepth = 8,
-                    Opacity = 0.75
+                    BlurRadius = 34,
+                    ShadowDepth = 6,
+                    Opacity = 0.58
                 }
             };
+            infoCardGlassRoot.SizeChanged += HandleInfoCardLayoutChanged;
+            root.SizeChanged += HandleInfoCardLayoutChanged;
             slideLayer.Children.Add(infoCard);
 
             root.Children.Add(slideLayer);
@@ -271,6 +344,7 @@ namespace AnikiHelper.Services.ScreenSaver
                 logoPanel.Visibility = showLogo ? Visibility.Visible : Visibility.Collapsed;
 
                 gameTitle.Text = slide.GameName ?? string.Empty;
+                gameTitle.Visibility = showLogo ? Visibility.Collapsed : Visibility.Visible;
                 playtimeLabel.Text = slide.PlaytimeLabel ?? string.Empty;
                 playtimeValue.Text = slide.PlaytimeValue ?? string.Empty;
                 achievementsLabel.Text = slide.AchievementsLabel ?? string.Empty;
@@ -279,6 +353,7 @@ namespace AnikiHelper.Services.ScreenSaver
                 lastPlayedValue.Text = slide.LastPlayedValue ?? string.Empty;
                 statusText.Text = slide.StatusValue ?? string.Empty;
                 infoCard.Visibility = showInfoCard ? Visibility.Visible : Visibility.Collapsed;
+                UpdateInfoCardBackdrop();
 
                 if (animateBackground)
                 {
@@ -404,11 +479,84 @@ namespace AnikiHelper.Services.ScreenSaver
             }
         }
 
+        private void HandleInfoCardLayoutChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateInfoCardBackdrop();
+        }
+
+        private void UpdateInfoCardBackdrop()
+        {
+            if (root.ActualWidth <= 0 || root.ActualHeight <= 0 ||
+                infoCard.ActualWidth <= 0 || infoCard.ActualHeight <= 0 ||
+                infoCardGlassRoot.ActualWidth <= 0 || infoCardGlassRoot.ActualHeight <= 0)
+            {
+                return;
+            }
+
+            const double overscan = 28;
+            var contentLeft = root.ActualWidth - infoCard.Margin.Right - infoCard.ActualWidth
+                + infoCard.BorderThickness.Left;
+            var contentTop = root.ActualHeight - infoCard.Margin.Bottom - infoCard.ActualHeight
+                + infoCard.BorderThickness.Top;
+
+            infoCardBackdropBrush.Viewbox = new Rect(
+                contentLeft - overscan,
+                contentTop - overscan,
+                infoCardGlassRoot.ActualWidth + (overscan * 2),
+                infoCardGlassRoot.ActualHeight + (overscan * 2));
+
+            infoCardGlassRoot.Clip = new RectangleGeometry(
+                new Rect(0, 0, infoCardGlassRoot.ActualWidth, infoCardGlassRoot.ActualHeight),
+                17,
+                17);
+        }
+
+        private static Brush ResolveThemeBrush(string resourceKey, Brush fallback)
+        {
+            try
+            {
+                var resource = Application.Current?.TryFindResource(resourceKey);
+
+                if (resource is Brush brush)
+                {
+                    return brush;
+                }
+            }
+            catch
+            {
+            }
+
+            return fallback;
+        }
+
+        private static Color ResolveThemeColor(string resourceKey, Color fallback)
+        {
+            try
+            {
+                var resource = Application.Current?.TryFindResource(resourceKey);
+
+                if (resource is Color color)
+                {
+                    return color;
+                }
+
+                if (resource is SolidColorBrush brush)
+                {
+                    return brush.Color;
+                }
+            }
+            catch
+            {
+            }
+
+            return fallback;
+        }
+
         private static TextBlock CreateInfoLabel()
         {
             return new TextBlock
             {
-                Foreground = new SolidColorBrush(Color.FromRgb(168, 176, 191)),
+                Foreground = new SolidColorBrush(Color.FromRgb(232, 235, 242)),
                 FontSize = 17,
                 Margin = new Thickness(0, 5, 28, 5),
                 VerticalAlignment = VerticalAlignment.Center

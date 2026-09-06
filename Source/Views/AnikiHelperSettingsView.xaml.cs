@@ -15,6 +15,10 @@ namespace AnikiHelper
 {
     public partial class AnikiHelperSettingsView : UserControl
     {
+        // Public Aniki Pack Creator release page.
+        private const string PackCreatorDownloadUrl = "https://github.com/Mike-Aniki/AnikiPackCreator/releases/latest";
+        private const string PackCreatorExecutableName = "AnikiPackCreator.exe";
+
         private bool isUpdatingVideoTmdbTokenPasswordBox;
         private CancellationTokenSource videoArtworkScanCts;
 
@@ -36,6 +40,12 @@ namespace AnikiHelper
                 {
                     var vm = DataContext as AnikiHelperSettingsViewModel;
                     vm?.RefreshHomeDashboard();
+                    vm?.RefreshCustomVisualPackLibrary();
+                    vm?.RefreshCustomColorPackLibrary();
+                    vm?.RefreshLoginPackLibrary();
+                    vm?.RefreshSoundPackLibrary();
+                    vm?.RefreshCompletePackLibrary();
+                    vm?.RefreshLoginBackgroundMediaState();
                     vm?.Settings?.LoadOverlayApps();
                     if (vm?.Settings != null)
                     {
@@ -117,6 +127,583 @@ namespace AnikiHelper
         }
 
 
+        private void ImportLoginPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                if (vm == null)
+                {
+                    return;
+                }
+
+                var dialog = new OpenFileDialog
+                {
+                    Title = GetResourceText("LoginPack_ImportDialogTitle", "Import a Login Pack"),
+                    Filter = "Login Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    CheckFileExists = true
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        GetResourceText("LoginPack_ImportConfirm", "Add this ZIP to the Login Pack library?"),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question)
+                    : MessageBox.Show(
+                        GetResourceText("LoginPack_ImportConfirm", "Add this ZIP to the Login Pack library?"),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                var result = vm.ImportLoginPack(dialog.FileName);
+                var packName = string.IsNullOrWhiteSpace(result?.PackName)
+                    ? Path.GetFileNameWithoutExtension(dialog.FileName)
+                    : result.PackName;
+                var authorSuffix = string.IsNullOrWhiteSpace(result?.Author)
+                    ? string.Empty
+                    : " — " + result.Author;
+
+                var key = result?.WasUpdated == true
+                    ? "LoginPack_UpdateSuccess"
+                    : result?.WasAlreadyInLibrary == true
+                        ? "LoginPack_AlreadyInstalled"
+                        : "LoginPack_ImportSuccess";
+                var fallback = result?.WasUpdated == true
+                    ? "Login Pack '{0}' was updated to version {1}."
+                    : result?.WasAlreadyInLibrary == true
+                        ? "Login Pack '{0}' is already installed."
+                        : "Login Pack '{0}' was added to the library.";
+
+                ShowInformation(string.Format(
+                    GetResourceText(key, fallback),
+                    packName + authorSuffix,
+                    result?.Version ?? string.Empty));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("LoginPack_ImportError", "The Login Pack could not be imported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ExportLoginPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as LoginPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var dialog = new SaveFileDialog
+                {
+                    Title = GetResourceText("LoginPack_ExportDialogTitle", "Export Login Pack"),
+                    Filter = "Login Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    AddExtension = true,
+                    FileName = GetSafeLoginPackFileName(pack.Name) + ".zip"
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                vm.ExportLoginPack(pack.Id, dialog.FileName);
+                ShowInformation(string.Format(
+                    GetResourceText("LoginPack_ExportSuccess", "Login Pack '{0}' exported successfully."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("LoginPack_ExportError", "The Login Pack could not be exported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void DeleteLoginPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as LoginPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var confirmationText = string.Format(
+                    GetResourceText("LoginPack_DeleteConfirm", "Delete Login Pack '{0}' from the library?"),
+                    pack.Name);
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning)
+                    : MessageBox.Show(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                vm.DeleteLoginPack(pack.Id);
+                ShowInformation(string.Format(
+                    GetResourceText("LoginPack_DeleteSuccess", "Login Pack '{0}' was deleted."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("LoginPack_DeleteError", "The Login Pack could not be deleted:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private static string GetSafeLoginPackFileName(string name)
+        {
+            var value = string.IsNullOrWhiteSpace(name) ? "LoginPack" : name.Trim();
+            foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalidCharacter, '_');
+            }
+
+            return string.IsNullOrWhiteSpace(value) ? "LoginPack" : value;
+        }
+
+        private void ImportSoundPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                if (vm == null)
+                {
+                    return;
+                }
+
+                var dialog = new OpenFileDialog
+                {
+                    Title = GetResourceText("SoundPack_ImportDialogTitle", "Import a Sound Pack"),
+                    Filter = "Sound Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    CheckFileExists = true
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        GetResourceText("SoundPack_ImportConfirm", "Add this ZIP to the Sound Pack library?"),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question)
+                    : MessageBox.Show(
+                        GetResourceText("SoundPack_ImportConfirm", "Add this ZIP to the Sound Pack library?"),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                var result = vm.ImportSoundPack(dialog.FileName);
+                var packName = string.IsNullOrWhiteSpace(result?.PackName)
+                    ? Path.GetFileNameWithoutExtension(dialog.FileName)
+                    : result.PackName;
+                var authorSuffix = string.IsNullOrWhiteSpace(result?.Author)
+                    ? string.Empty
+                    : " — " + result.Author;
+
+                var key = result?.WasUpdated == true
+                    ? "SoundPack_UpdateSuccess"
+                    : result?.WasAlreadyInLibrary == true
+                        ? "SoundPack_AlreadyInstalled"
+                        : "SoundPack_ImportSuccess";
+                var fallback = result?.WasUpdated == true
+                    ? "Sound Pack '{0}' was updated to version {1}."
+                    : result?.WasAlreadyInLibrary == true
+                        ? "Sound Pack '{0}' is already installed."
+                        : "Sound Pack '{0}' was added to the library.";
+
+                ShowInformation(string.Format(
+                    GetResourceText(key, fallback),
+                    packName + authorSuffix,
+                    result?.Version ?? string.Empty));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("SoundPack_ImportError", "The Sound Pack could not be imported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ExportSoundPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as SoundPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var dialog = new SaveFileDialog
+                {
+                    Title = GetResourceText("SoundPack_ExportDialogTitle", "Export Sound Pack"),
+                    Filter = "Sound Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    AddExtension = true,
+                    FileName = GetSafeSoundPackFileName(pack.Name) + ".zip"
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                vm.ExportSoundPack(pack.Id, dialog.FileName);
+                ShowInformation(string.Format(
+                    GetResourceText("SoundPack_ExportSuccess", "Sound Pack '{0}' exported successfully."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("SoundPack_ExportError", "The Sound Pack could not be exported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void DeleteSoundPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as SoundPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var confirmationText = string.Format(
+                    GetResourceText("SoundPack_DeleteConfirm", "Delete Sound Pack '{0}' from the library?"),
+                    pack.Name);
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning)
+                    : MessageBox.Show(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                vm.DeleteSoundPack(pack.Id);
+                ShowInformation(string.Format(
+                    GetResourceText("SoundPack_DeleteSuccess", "Sound Pack '{0}' was deleted."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("SoundPack_DeleteError", "The Sound Pack could not be deleted:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private static string GetSafeSoundPackFileName(string name)
+        {
+            var value = string.IsNullOrWhiteSpace(name) ? "SoundPack" : name.Trim();
+            foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalidCharacter, '_');
+            }
+
+            return string.IsNullOrWhiteSpace(value) ? "SoundPack" : value;
+        }
+
+        private void ImportCompletePack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                if (vm == null)
+                {
+                    return;
+                }
+
+                var dialog = new OpenFileDialog
+                {
+                    Title = GetResourceText("CompletePack_ImportDialogTitle", "Import a Complete Pack"),
+                    Filter = "Complete Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    CheckFileExists = true
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        GetResourceText("CompletePack_ImportConfirm", "Add this ZIP to the Complete Pack library? Nothing is applied until you choose Apply."),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question)
+                    : MessageBox.Show(
+                        GetResourceText("CompletePack_ImportConfirm", "Add this ZIP to the Complete Pack library? Nothing is applied until you choose Apply."),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                var result = vm.ImportCompletePack(dialog.FileName);
+                var packName = string.IsNullOrWhiteSpace(result?.PackName)
+                    ? Path.GetFileNameWithoutExtension(dialog.FileName)
+                    : result.PackName;
+                var authorSuffix = string.IsNullOrWhiteSpace(result?.Author)
+                    ? string.Empty
+                    : " — " + result.Author;
+
+                var key = result?.WasUpdated == true
+                    ? "CompletePack_UpdateSuccess"
+                    : result?.WasAlreadyInLibrary == true
+                        ? "CompletePack_AlreadyInstalled"
+                        : "CompletePack_ImportSuccess";
+                var fallback = result?.WasUpdated == true
+                    ? "Complete Pack '{0}' was updated to version {1}."
+                    : result?.WasAlreadyInLibrary == true
+                        ? "Complete Pack '{0}' is already installed."
+                        : "Complete Pack '{0}' was added to the library.";
+
+                ShowInformation(string.Format(
+                    GetResourceText(key, fallback),
+                    packName + authorSuffix,
+                    result?.Version ?? string.Empty));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("CompletePack_ImportError", "The Complete Pack could not be imported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ApplyCompletePack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as CompletePackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var confirmationText = string.Format(
+                    GetResourceText(
+                        "CompletePack_ApplyConfirm",
+                        "Apply Complete Pack '{0}'? Included components replace their current selections. Components not included are left unchanged."),
+                    pack.Name);
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question)
+                    : MessageBox.Show(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                vm.ApplyCompletePack(pack.Id);
+                global::AnikiHelper.AnikiHelper.Instance?.ShowAnikiThemeSettingsRestartPromptIfNeeded();
+                ShowInformation(string.Format(
+                    GetResourceText("CompletePack_ApplySuccess", "Complete Pack '{0}' was applied."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("CompletePack_ApplyError", "The Complete Pack could not be applied:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ExportCompletePack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as CompletePackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var dialog = new SaveFileDialog
+                {
+                    Title = GetResourceText("CompletePack_ExportDialogTitle", "Export Complete Pack"),
+                    Filter = "Complete Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    AddExtension = true,
+                    FileName = GetSafeCompletePackFileName(pack.Name) + ".zip"
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                vm.ExportCompletePack(pack.Id, dialog.FileName);
+                ShowInformation(string.Format(
+                    GetResourceText("CompletePack_ExportSuccess", "Complete Pack '{0}' exported successfully."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("CompletePack_ExportError", "The Complete Pack could not be exported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void DeleteCompletePack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as CompletePackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var confirmationText = string.Format(
+                    GetResourceText(
+                        "CompletePack_DeleteConfirm",
+                        "Delete Complete Pack '{0}' from the library? Its individual component packs remain installed."),
+                    pack.Name);
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning)
+                    : MessageBox.Show(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                vm.DeleteCompletePack(pack.Id);
+                ShowInformation(string.Format(
+                    GetResourceText("CompletePack_DeleteSuccess", "Complete Pack '{0}' was deleted."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("CompletePack_DeleteError", "The Complete Pack could not be deleted:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private static string GetSafeCompletePackFileName(string name)
+        {
+            var value = string.IsNullOrWhiteSpace(name) ? "CompletePack" : name.Trim();
+            foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalidCharacter, '_');
+            }
+
+            return string.IsNullOrWhiteSpace(value) ? "CompletePack" : value;
+        }
+
+        private void ClearDownloadedLoginVideos_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                if (vm == null || !vm.HasDownloadedLoginVideos)
+                {
+                    return;
+                }
+
+                var message = GetResourceText(
+                    "DownloadedLoginVideos_ClearConfirm",
+                    "Delete all downloaded login backgrounds? The default background is kept.");
+
+                var result = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(message, "Aniki Helper", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+                    : MessageBox.Show(message, "Aniki Helper", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+                if (result != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                vm.ClearDownloadedLoginBackgroundVideos();
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("DownloadedLoginVideos_ClearError", "Downloaded login backgrounds could not be deleted:") +
+                    "\n" + ex.Message);
+            }
+        }
+
         private void ConfigureThemeFeatures_Click(object sender, RoutedEventArgs e)
         {
             if (MainSettingsTabs != null)
@@ -129,7 +716,7 @@ namespace AnikiHelper
         {
             if (MainSettingsTabs != null)
             {
-                MainSettingsTabs.SelectedIndex = 2;
+                MainSettingsTabs.SelectedIndex = 3;
             }
         }
 
@@ -137,7 +724,7 @@ namespace AnikiHelper
         {
             if (MainSettingsTabs != null)
             {
-                MainSettingsTabs.SelectedIndex = 3;
+                MainSettingsTabs.SelectedIndex = 4;
             }
         }
 
@@ -420,6 +1007,509 @@ namespace AnikiHelper
                     GetResourceText("ThemeConfiguration_ImportError", "Error while importing the theme configuration:") +
                     "\n" + ex.Message);
             }
+        }
+
+        private void OpenVisualPackCreator_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var path = ResolvePackCreatorPath(vm?.Settings);
+
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                {
+                    vm?.RefreshVisualPackCreatorState();
+                    ShowError(GetResourceText(
+                        "VisualPackCreator_OpenMissing",
+                        "The Aniki Pack Creator executable could not be found. Locate it again."));
+                    return;
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = path,
+                    WorkingDirectory = Path.GetDirectoryName(path) ?? string.Empty,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("VisualPackCreator_OpenError", "The Aniki Pack Creator could not be opened:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private string ResolvePackCreatorPath(AnikiHelperSettings settings)
+        {
+            if (settings == null)
+            {
+                return string.Empty;
+            }
+
+            var configuredPath = settings.VisualPackCreatorPath;
+            if (!string.IsNullOrWhiteSpace(configuredPath) && File.Exists(configuredPath))
+            {
+                return configuredPath;
+            }
+
+            // Migration from the former AnikiVisualPackCreator.exe name.
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                try
+                {
+                    var directory = Path.GetDirectoryName(configuredPath);
+                    if (!string.IsNullOrWhiteSpace(directory))
+                    {
+                        var renamedExecutable = Path.Combine(directory, PackCreatorExecutableName);
+                        if (File.Exists(renamedExecutable))
+                        {
+                            settings.VisualPackCreatorPath = renamedExecutable;
+                            (DataContext as AnikiHelperSettingsViewModel)?.RefreshVisualPackCreatorState();
+                            return renamedExecutable;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return configuredPath ?? string.Empty;
+        }
+
+        private void LocateVisualPackCreator_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                if (vm?.Settings == null)
+                {
+                    return;
+                }
+
+                var dialog = new OpenFileDialog
+                {
+                    Title = GetResourceText("VisualPackCreator_LocateDialogTitle", "Locate Aniki Pack Creator"),
+                    Filter = "Aniki Pack Creator (AnikiPackCreator.exe)|AnikiPackCreator.exe|Executable files (*.exe)|*.exe",
+                    CheckFileExists = true,
+                    Multiselect = false
+                };
+
+                var currentPath = vm.Settings.VisualPackCreatorPath;
+                if (!string.IsNullOrWhiteSpace(currentPath))
+                {
+                    try
+                    {
+                        var currentDirectory = Path.GetDirectoryName(currentPath);
+                        if (!string.IsNullOrWhiteSpace(currentDirectory) && Directory.Exists(currentDirectory))
+                        {
+                            dialog.InitialDirectory = currentDirectory;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                vm.Settings.VisualPackCreatorPath = dialog.FileName;
+                vm.RefreshVisualPackCreatorState();
+                vm.EndEdit();
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("VisualPackCreator_LocateError", "The Aniki Pack Creator location could not be saved:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void DownloadVisualPackCreator_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = PackCreatorDownloadUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("VisualPackCreator_DownloadError", "The Aniki Pack Creator download page could not be opened:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void OpenCommunityPacks_Click(object sender, RoutedEventArgs e)
+        {
+            var packType = (sender as FrameworkElement)?.Tag as string ?? "visual";
+            try
+            {
+                (DataContext as AnikiHelperSettingsViewModel)?.OpenCommunityPacksBrowser(packType);
+            }
+            catch (Exception ex)
+            {
+                (DataContext as AnikiHelperSettingsViewModel)?.Api?.Dialogs?.ShowErrorMessage(
+                    GetResourceText("CommunityPack_OpenError", "The Community Packs browser could not be opened:") +
+                    Environment.NewLine + ex.Message,
+                    GetResourceText("CommunityPack_GenericTitle", "Community Packs"));
+            }
+        }
+
+        private void ImportCustomVisualPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                if (vm == null)
+                {
+                    return;
+                }
+
+                var dialog = new OpenFileDialog
+                {
+                    Title = GetResourceText("VisualPackCustom_ImportDialogTitle", "Import a Custom Visual Pack"),
+                    Filter = "Visual Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    CheckFileExists = true
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var confirmText = GetResourceText(
+                    "VisualPackCustom_ImportConfirm",
+                    "Add this ZIP to the Visual Pack library?");
+
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(confirmText, "Aniki Helper", MessageBoxButton.YesNo, MessageBoxImage.Question)
+                    : MessageBox.Show(confirmText, "Aniki Helper", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                var result = vm.ImportCustomVisualPack(dialog.FileName);
+                var packName = string.IsNullOrWhiteSpace(result?.PackName)
+                    ? Path.GetFileNameWithoutExtension(dialog.FileName)
+                    : result.PackName;
+
+                var authorSuffix = string.IsNullOrWhiteSpace(result?.Author)
+                    ? string.Empty
+                    : " — " + result.Author;
+
+                var messageKey = result?.WasUpdated == true
+                    ? "VisualPackLibrary_UpdateSuccess"
+                    : result?.WasAlreadyInLibrary == true
+                        ? "VisualPackLibrary_DuplicateApplied"
+                        : "VisualPackCustom_ImportSuccess";
+                var fallback = result?.WasUpdated == true
+                    ? "Visual Pack '{0}' was updated. The installed version is now {1}."
+                    : result?.WasAlreadyInLibrary == true
+                        ? "Visual Pack '{0}' was already in the library. Select it in Fullscreen under Custom > Selected Visual Pack to use it."
+                        : "Visual Pack '{0}' was added to the library. Select it in Fullscreen under Custom > Selected Visual Pack to use it.";
+
+                ShowInformation(string.Format(
+                    GetResourceText(messageKey, fallback),
+                    packName + authorSuffix,
+                    result?.Version ?? string.Empty));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("VisualPackCustom_ImportError", "The Custom Visual Pack could not be imported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ApplyCustomVisualPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as VisualPackLibraryViewItem;
+                if (vm == null || pack == null || pack.IsActive)
+                {
+                    return;
+                }
+
+                vm.ApplyCustomVisualPack(pack.Id);
+
+                ShowInformation(string.Format(
+                    GetResourceText(
+                        "VisualPackLibrary_ApplySuccess",
+                        "Visual Pack '{0}' is now active. It will be used when Custom is selected."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("VisualPackLibrary_ApplyError", "The Visual Pack could not be applied:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ExportCustomVisualPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as VisualPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var dialog = new SaveFileDialog
+                {
+                    Title = GetResourceText("VisualPackLibrary_ExportDialogTitle", "Export Visual Pack"),
+                    Filter = "Visual Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    AddExtension = true,
+                    FileName = GetSafeVisualPackFileName(pack.Name) + ".zip"
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                vm.ExportCustomVisualPack(pack.Id, dialog.FileName);
+
+                ShowInformation(string.Format(
+                    GetResourceText("VisualPackLibrary_ExportSuccess", "Visual Pack '{0}' exported successfully."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("VisualPackLibrary_ExportError", "The Visual Pack could not be exported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void DeleteCustomVisualPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as VisualPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var confirmText = string.Format(
+                    GetResourceText("VisualPackLibrary_DeleteConfirm", "Delete Visual Pack '{0}' from the library?"),
+                    pack.Name);
+
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(confirmText, "Aniki Helper", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+                    : MessageBox.Show(confirmText, "Aniki Helper", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                vm.DeleteCustomVisualPack(pack.Id);
+
+                ShowInformation(string.Format(
+                    GetResourceText("VisualPackLibrary_DeleteSuccess", "Visual Pack '{0}' was deleted."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("VisualPackLibrary_DeleteError", "The Visual Pack could not be deleted:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ImportCustomColorPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                if (vm == null)
+                {
+                    return;
+                }
+
+                var dialog = new OpenFileDialog
+                {
+                    Title = GetResourceText("ColorPack_ImportDialogTitle", "Import a Color Pack"),
+                    Filter = "Color Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    CheckFileExists = true
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        GetResourceText("ColorPack_ImportConfirm", "Add this ZIP to the Color Pack library?"),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question)
+                    : MessageBox.Show(
+                        GetResourceText("ColorPack_ImportConfirm", "Add this ZIP to the Color Pack library?"),
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                var result = vm.ImportCustomColorPack(dialog.FileName);
+                var packName = string.IsNullOrWhiteSpace(result?.PackName)
+                    ? Path.GetFileNameWithoutExtension(dialog.FileName)
+                    : result.PackName;
+                var authorSuffix = string.IsNullOrWhiteSpace(result?.Author)
+                    ? string.Empty
+                    : " — " + result.Author;
+
+                var key = result?.WasUpdated == true
+                    ? "ColorPack_UpdateSuccess"
+                    : result?.WasAlreadyInLibrary == true
+                        ? "ColorPack_AlreadyInstalled"
+                        : "ColorPack_ImportSuccess";
+                var fallback = result?.WasUpdated == true
+                    ? "Color Pack '{0}' was updated to version {1}."
+                    : result?.WasAlreadyInLibrary == true
+                        ? "Color Pack '{0}' is already installed."
+                        : "Color Pack '{0}' was added to the library.";
+
+                ShowInformation(string.Format(
+                    GetResourceText(key, fallback),
+                    packName + authorSuffix,
+                    result?.Version ?? string.Empty));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("ColorPack_ImportError", "The Color Pack could not be imported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void ExportCustomColorPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as ColorPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var dialog = new SaveFileDialog
+                {
+                    Title = GetResourceText("ColorPack_ExportDialogTitle", "Export Color Pack"),
+                    Filter = "Color Pack ZIP (*.zip)|*.zip",
+                    DefaultExt = ".zip",
+                    AddExtension = true,
+                    FileName = GetSafeColorPackFileName(pack.Name) + ".zip"
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                vm.ExportCustomColorPack(pack.Id, dialog.FileName);
+                ShowInformation(string.Format(
+                    GetResourceText("ColorPack_ExportSuccess", "Color Pack '{0}' exported successfully."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("ColorPack_ExportError", "The Color Pack could not be exported:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private void DeleteCustomColorPack_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AnikiHelperSettingsViewModel;
+                var pack = (sender as FrameworkElement)?.DataContext as ColorPackLibraryViewItem;
+                if (vm == null || pack == null)
+                {
+                    return;
+                }
+
+                var confirmationText = string.Format(
+                    GetResourceText("ColorPack_DeleteConfirm", "Delete Color Pack '{0}' from the library?"),
+                    pack.Name);
+                var confirmation = vm.Api != null
+                    ? vm.Api.Dialogs.ShowMessage(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning)
+                    : MessageBox.Show(
+                        confirmationText,
+                        "Aniki Helper",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                vm.DeleteCustomColorPack(pack.Id);
+                ShowInformation(string.Format(
+                    GetResourceText("ColorPack_DeleteSuccess", "Color Pack '{0}' was deleted."),
+                    pack.Name));
+            }
+            catch (Exception ex)
+            {
+                ShowError(
+                    GetResourceText("ColorPack_DeleteError", "The Color Pack could not be deleted:") +
+                    "\n" + ex.Message);
+            }
+        }
+
+        private static string GetSafeColorPackFileName(string name)
+        {
+            var value = string.IsNullOrWhiteSpace(name) ? "ColorPack" : name.Trim();
+            foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalidCharacter, '_');
+            }
+
+            return string.IsNullOrWhiteSpace(value) ? "ColorPack" : value;
+        }
+
+        private static string GetSafeVisualPackFileName(string name)
+        {
+            var value = string.IsNullOrWhiteSpace(name) ? "VisualPack" : name.Trim();
+            foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalidCharacter, '_');
+            }
+
+            return string.IsNullOrWhiteSpace(value) ? "VisualPack" : value;
         }
 
         private string GetResourceText(string key, string fallback)

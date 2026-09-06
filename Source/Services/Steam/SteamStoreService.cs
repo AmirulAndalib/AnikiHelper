@@ -1296,6 +1296,8 @@ namespace AnikiHelper.Services
                     return "¥" + price;
                 case "BRL":
                     return "R$ " + price;
+                case "MXN":
+                    return "Mex$ " + price;
                 case "PLN":
                     return price + " zł";
                 case "RUB":

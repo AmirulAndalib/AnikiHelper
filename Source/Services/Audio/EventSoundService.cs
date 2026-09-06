@@ -1,4 +1,5 @@
 ﻿using Playnite.SDK;
+using AnikiHelper.Services.SoundPacks;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -48,6 +49,7 @@ namespace AnikiHelper
 
         private readonly IPlayniteAPI playniteApi;
         private readonly AnikiHelperSettings settings;
+        private readonly SoundPackImportService soundPackImportService;
 
         private readonly List<MediaPlayer> activePlayers = new List<MediaPlayer>();
 
@@ -55,10 +57,11 @@ namespace AnikiHelper
         private double cachedInterfaceVolume = 1.0;
         private DateTime lastVolumeReadUtc = DateTime.MinValue;
 
-        public EventSoundService(IPlayniteAPI api, AnikiHelperSettings settings)
+        public EventSoundService(IPlayniteAPI api, AnikiHelperSettings settings, string pluginUserDataPath)
         {
             playniteApi = api;
             this.settings = settings;
+            soundPackImportService = new SoundPackImportService(api, pluginUserDataPath, logger);
         }
 
         private bool CanPlay(out string reason)
@@ -224,12 +227,25 @@ namespace AnikiHelper
                     return null;
                 }
 
-                if (forceKonamiFolder || settings?.IsKonamiModeActive == true)
+                var konamiMode = forceKonamiFolder || settings?.IsKonamiModeActive == true;
+                if (konamiMode)
                 {
                     var konamiPath = Path.Combine(folder, "Konami", fileName);
                     if (File.Exists(konamiPath))
                     {
                         return konamiPath;
+                    }
+                }
+
+                // Lucky Day and Konami always have priority over user Sound Packs.
+                // During Lucky Day, normal event sounds fall back to the Aniki defaults;
+                // dedicated Lucky sounds (LuckyDay1/2.wav) are resolved separately.
+                if (!konamiMode && settings?.IsLuckyDay != true)
+                {
+                    var soundPackPath = soundPackImportService?.GetActiveAudioPath(fileName);
+                    if (!string.IsNullOrWhiteSpace(soundPackPath) && File.Exists(soundPackPath))
+                    {
+                        return soundPackPath;
                     }
                 }
 

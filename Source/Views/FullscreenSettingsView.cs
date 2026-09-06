@@ -57,6 +57,11 @@ namespace AnikiHelperFullscreen.Views
         }
 
         private static List<UIElement> originalSettingsMenuChildren;
+        private static object currentSettingsContext;
+        private static int currentThemeSettingsSectionKey;
+        private static int currentCommunityVisualPacksSectionKey;
+        private static bool communityVisualPacksSectionOpen;
+        private static global::AnikiHelper.AnikiCommunityVisualPacksFullscreenController communityVisualPacksController;
 
 
         public static RelayCommand<object> AnikiThemeTextInputCommand { get; } =
@@ -64,6 +69,16 @@ namespace AnikiHelperFullscreen.Views
             {
                 TextInput(parameter as AnikiThemeVariable);
             });
+
+        public static RelayCommand<object> OpenCommunityPacksCommand { get; } =
+            new RelayCommand<object>((parameter) => OpenCommunityPacks(parameter as string));
+
+        // Compatibility alias for any older XAML still referencing the Visual-only command.
+        public static RelayCommand OpenCommunityVisualPacksCommand { get; } =
+            new RelayCommand(() => OpenCommunityPacks("VisualPack"));
+
+        public static RelayCommand CommunityVisualPacksBackCommand { get; } =
+            new RelayCommand(() => ReturnFromCommunityVisualPacks());
 
         public static void Init()
         {
@@ -126,6 +141,8 @@ namespace AnikiHelperFullscreen.Views
 
             window.Closed -= OnSettingsWindowClosed;
             window.Closed += OnSettingsWindowClosed;
+            window.PreviewKeyDown -= OnSettingsWindowPreviewKeyDown;
+            window.PreviewKeyDown += OnSettingsWindowPreviewKeyDown;
 
 
             dynamic ctx = window.DataContext;
@@ -161,6 +178,16 @@ namespace AnikiHelperFullscreen.Views
                 sectionViews,
                 new Func<UserControl>(LoadFullscreenSettingsView));
 
+            int communityVisualPacksSectionKey = CreateHiddenSettingsSection(
+                assembly,
+                sectionViews,
+                new Func<UserControl>(LoadCommunityVisualPacksFullscreenView),
+                setDefaultDataContext: false);
+
+            currentSettingsContext = ctx;
+            currentThemeSettingsSectionKey = anikiThemeSettingsCategorySectionKey;
+            currentCommunityVisualPacksSectionKey = communityVisualPacksSectionKey;
+
             InjectThemeSettingsMenuButton(
                 assembly,
                 ctx,
@@ -175,6 +202,18 @@ namespace AnikiHelperFullscreen.Views
             try
             {
                 originalSettingsMenuChildren = null;
+                currentSettingsContext = null;
+                currentThemeSettingsSectionKey = 0;
+                currentCommunityVisualPacksSectionKey = 0;
+                communityVisualPacksSectionOpen = false;
+
+                try { communityVisualPacksController?.Dispose(); } catch { }
+                communityVisualPacksController = null;
+
+                if (sender is Window closedWindow)
+                {
+                    closedWindow.PreviewKeyDown -= OnSettingsWindowPreviewKeyDown;
+                }
 
                 var plugin = global::AnikiHelper.AnikiHelper.Instance;
 
@@ -192,13 +231,17 @@ namespace AnikiHelperFullscreen.Views
         private static int CreateHiddenSettingsSection(
             Assembly assembly,
             dynamic sectionViews,
-            Func<UserControl> viewFactory)
+            Func<UserControl> viewFactory,
+            bool setDefaultDataContext = true)
         {
             Type sectionType = assembly.GetType("Playnite.FullscreenApp.Controls.SettingsSections.SettingsSectionControl");
             dynamic hostControl = Activator.CreateInstance(sectionType);
 
             UserControl control = viewFactory();
-            control.DataContext = global::AnikiHelper.AnikiHelper.Instance.SettingsVM;
+            if (setDefaultDataContext)
+            {
+                control.DataContext = global::AnikiHelper.AnikiHelper.Instance.SettingsVM;
+            }
 
             hostControl.Content = control;
 
@@ -351,8 +394,14 @@ namespace AnikiHelperFullscreen.Views
                 {
                     Content = headerContent,
                     ContentTemplate = Application.Current.TryFindResource("AnikiThemeSettingsCategoryMenuHeaderTemplate") as DataTemplate,
-                    HorizontalAlignment = HorizontalAlignment.Stretch
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Focusable = false,
+                    IsTabStop = false
                 };
+
+                // Purely visual category header: never let controller/keyboard navigation
+                // stop on it as if it were an empty settings entry.
+                KeyboardNavigation.SetIsTabStop(headerControl, false);
 
                 Grid.SetRow(headerControl, 0);
                 rootGrid.Children.Add(headerControl);
@@ -642,6 +691,106 @@ namespace AnikiHelperFullscreen.Views
             }
         }
 
+        private static UserControl LoadCommunityVisualPacksFullscreenView()
+        {
+            var plugin = global::AnikiHelper.AnikiHelper.Instance;
+            if (plugin == null)
+            {
+                throw new InvalidOperationException("Aniki Helper is not available.");
+            }
+
+            communityVisualPacksController = plugin.CreateCommunityVisualPacksFullscreenController();
+            if (communityVisualPacksController?.Control == null)
+            {
+                throw new InvalidOperationException("Community Packs Fullscreen view could not be created.");
+            }
+
+            return communityVisualPacksController.Control;
+        }
+
+        private static void OpenCommunityPacks(string presetGroupId)
+        {
+            try
+            {
+                if (currentSettingsContext == null || currentCommunityVisualPacksSectionKey <= 0)
+                {
+                    logger.Warn("[AnikiHelper] Community Packs Fullscreen section is not available.");
+                    return;
+                }
+
+                var packType = GetCommunityPackTypeForPresetGroup(presetGroupId);
+                if (string.IsNullOrWhiteSpace(packType))
+                {
+                    logger.Warn("[AnikiHelper] No Community Pack category is mapped for preset group: " + (presetGroupId ?? "<null>"));
+                    return;
+                }
+
+                communityVisualPacksSectionOpen = true;
+                communityVisualPacksController?.PrepareForOpen(packType);
+
+                dynamic ctx = currentSettingsContext;
+                ctx.OpenSectionCommand.Execute(currentCommunityVisualPacksSectionKey.ToString());
+            }
+            catch (Exception ex)
+            {
+                communityVisualPacksSectionOpen = false;
+                logger.Warn(ex, "[AnikiHelper] Failed to open Community Packs Fullscreen section.");
+            }
+        }
+
+        private static string GetCommunityPackTypeForPresetGroup(string presetGroupId)
+        {
+            switch ((presetGroupId ?? string.Empty).Trim())
+            {
+                case "VisualPack": return "visual";
+                case "Interface": return "color";
+                case "LoginBackground": return "login";
+                case "SoundPack": return "sound";
+                case "CompletePack": return "complete";
+                default: return null;
+            }
+        }
+
+        public static void ReturnFromCommunityVisualPacks()
+        {
+            try
+            {
+                communityVisualPacksSectionOpen = false;
+                var plugin = global::AnikiHelper.AnikiHelper.Instance;
+                plugin?.RefreshCustomVisualPackThemeSettings();
+                plugin?.RefreshCustomColorPackThemeSettings();
+                plugin?.RefreshLoginPackThemeSettings();
+                plugin?.RefreshSoundPackThemeSettings();
+                plugin?.RefreshCompletePackThemeSettings();
+
+                if (currentSettingsContext == null || currentThemeSettingsSectionKey <= 0)
+                {
+                    return;
+                }
+
+                dynamic ctx = currentSettingsContext;
+                ctx.OpenSectionCommand.Execute(currentThemeSettingsSectionKey.ToString());
+            }
+            catch (Exception ex)
+            {
+                logger.Warn(ex, "[AnikiHelper] Failed to return from Community Packs Fullscreen section.");
+            }
+        }
+
+        private static void OnSettingsWindowPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (!communityVisualPacksSectionOpen || e == null || e.IsRepeat)
+            {
+                return;
+            }
+
+            if (e.Key == Key.Escape || e.Key == Key.Back)
+            {
+                e.Handled = true;
+                ReturnFromCommunityVisualPacks();
+            }
+        }
+
         private static void TextInput(AnikiThemeVariable input)
         {
             if (input == null)
@@ -733,6 +882,9 @@ namespace AnikiHelperFullscreen.Views
 
                 var source = e.NewFocus as DependencyObject;
 
+                // Keep normal Playnite/WPF scrolling everywhere except at the two edges.
+                AdjustScrollForFirstOrLastSetting(source);
+
                 // 1. ComboBox item ouvert : preview du preset item.
                 var comboBoxItem = FindParentComboBoxItem(source);
                 if (comboBoxItem != null)
@@ -809,6 +961,11 @@ namespace AnikiHelperFullscreen.Views
             if (data is AnikiPresetItem preset)
             {
                 return preset.Preview;
+            }
+
+            if (data is AnikiThemeChoiceItem choice)
+            {
+                return choice.Preview;
             }
 
             if (data is AnikiThemeVariable variable)
@@ -911,6 +1068,117 @@ namespace AnikiHelperFullscreen.Views
             }
         }
 
+        private static void AdjustScrollForFirstOrLastSetting(DependencyObject source)
+        {
+            try
+            {
+                // Do not interfere with the items inside an opened ComboBox.
+                if (FindParentComboBoxItem(source) != null)
+                {
+                    return;
+                }
+
+                var currentControl = FindParentSettingNavigationControl(source);
+
+                if (currentControl == null)
+                {
+                    return;
+                }
+
+                var root = FindParentUserControl(currentControl);
+
+                if (root == null)
+                {
+                    return;
+                }
+
+                // This list contains only visible + enabled settings.
+                // That means if dependent settings below are greyed out,
+                // the last enabled setting is still considered the last navigable one.
+                var controls = GetSettingNavigationControls(root);
+                var index = controls.IndexOf(currentControl);
+
+                if (index < 0 || controls.Count == 0)
+                {
+                    return;
+                }
+
+                var isFirst = index == 0;
+                var isLast = index == controls.Count - 1;
+
+                // Important: do not touch scrolling for any option in between.
+                if (!isFirst && !isLast)
+                {
+                    return;
+                }
+
+                var scrollViewer = FindParentScrollViewer(currentControl);
+
+                if (scrollViewer == null)
+                {
+                    return;
+                }
+
+                // Let the standard BringIntoView finish first.
+                currentControl.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        var targetOffset = scrollViewer.VerticalOffset;
+
+                        if (isFirst)
+                        {
+                            // Reveal the section title above the first option.
+                            targetOffset -= 105d;
+                        }
+                        else if (isLast)
+                        {
+                            // Reveal a little more content below the last available option.
+                            targetOffset += 145d;
+                        }
+
+                        targetOffset = Math.Max(
+                            0d,
+                            Math.Min(scrollViewer.ScrollableHeight, targetOffset));
+
+                        if (Math.Abs(targetOffset - scrollViewer.VerticalOffset) > 1d)
+                        {
+                            scrollViewer.ScrollToVerticalOffset(targetOffset);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }), DispatcherPriority.ContextIdle);
+            }
+            catch
+            {
+            }
+        }
+
+        private static ScrollViewer FindParentScrollViewer(DependencyObject source)
+        {
+            try
+            {
+                var current = source;
+
+                while (current != null)
+                {
+                    if (current is ScrollViewer scrollViewer)
+                    {
+                        return scrollViewer;
+                    }
+
+                    current = VisualTreeHelper.GetParent(current);
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
         private static ComboBox FindParentComboBox(DependencyObject source)
         {
             while (source != null)
@@ -955,15 +1223,12 @@ namespace AnikiHelperFullscreen.Views
                 return;
             }
 
-            var focusableControls = root
-                .FindVisualChildren<Control>()
-                .Where(control =>
-                    control != null &&
-                    control.Focusable &&
-                    control.IsVisible &&
-                    control.IsEnabled &&
-                    KeyboardNavigation.GetIsTabStop(control))
-                .ToList();
+            // Important: use the same visually-sorted settings list as the rest of the
+            // Theme Customization navigation. The old visual-tree order grouped preset
+            // ComboBoxes before Boolean options, so in Appearance navigation could jump
+            // from Avatar directly to Login screen background and skip the two toggles
+            // displayed between them.
+            var focusableControls = GetSettingNavigationControls(root);
 
             if (focusableControls.Count == 0)
             {
@@ -971,12 +1236,6 @@ namespace AnikiHelperFullscreen.Views
             }
 
             var currentIndex = focusableControls.IndexOf(currentControl);
-
-            if (currentIndex < 0)
-            {
-                // If focus is inside the ComboBox template, fallback to parent ComboBox index.
-                currentIndex = focusableControls.FindIndex(control => ReferenceEquals(control, currentControl));
-            }
 
             if (currentIndex < 0)
             {

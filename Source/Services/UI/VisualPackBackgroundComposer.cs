@@ -60,6 +60,24 @@ namespace AnikiHelper
             catch { }
         }
 
+        public static void RefreshNow()
+        {
+            try
+            {
+                lastMainMenuSignature = string.Empty;
+                lastSettingSignature = string.Empty;
+                lastFrameSettingSignature = string.Empty;
+                lastBoxMessageSignature = string.Empty;
+                lastGameMenuSignature = string.Empty;
+                lastItemMenuSignature = string.Empty;
+                UpdateAllCompositeBrushesIfNeeded();
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, "[AnikiHelper] VisualPackBackgroundComposer refresh failed.");
+            }
+        }
+
         public static void Stop()
         {
             try

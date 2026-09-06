@@ -67,6 +67,8 @@ namespace AnikiHelper.Services
         private bool lastReportedSecondaryMusicState;
         private const string QuickAccessWindowStyleName = "QuickAccessWindowStyle";
         private const string VideoPlayerWindowStyleName = "VideoPlayerWindowStyle";
+        private const string GamepadTesterWindowStyleName = "GamepadTesterWindowStyle";
+        private const string AudioSwitcherWindowStyleName = "AudioSwitcherWindowStyle";
 
         public AnikiWindowManager(IPlayniteAPI playniteApi)
         {
@@ -827,7 +829,7 @@ namespace AnikiHelper.Services
                 $"Phase={phase} | Reason=Game is running/launching and Playnite/Aniki does not own foreground.");
         }
 
-        private void Open(string styleKey, bool forceChild, string focusTargetName, bool focusFirst, bool refocusAfterClick, bool noDim, bool secondaryMusic)
+        private void Open(string styleKey, bool forceChild, string focusTargetName, bool focusFirst, bool refocusAfterClick, bool noDim, bool secondaryMusic, bool allowQuickAccessHandoff = false)
         {
             if (string.IsNullOrWhiteSpace(styleKey))
                 return;
@@ -840,7 +842,11 @@ namespace AnikiHelper.Services
 
             // Second line of defence: even if a theme command or delayed RelayCommand somehow
             // fires while the game owns foreground, do not create/activate a Playnite/Aniki window.
-            if (IsWindowOpenBlockedByGameForeground())
+            // Exception: a Quick Access -> destination handoff has already passed this guard on
+            // the original user request. Closing Quick Access can make Xbox/Windows briefly move
+            // foreground away from Playnite for one dispatcher turn, so the internal continuation
+            // must not be rejected because of that transient focus change.
+            if (!allowQuickAccessHandoff && IsWindowOpenBlockedByGameForeground())
             {
                 LogGameForegroundWindowBlock(styleKey, "request");
                 return;
@@ -866,7 +872,9 @@ namespace AnikiHelper.Services
 
                 // Re-check on the UI thread because foreground ownership can change between
                 // the controller callback / command execution and the queued WPF open.
-                if (IsWindowOpenBlockedByGameForeground())
+                // The sole exception is the internal continuation of a Quick Access handoff;
+                // the initiating request already passed the foreground guard before Quick Access closed.
+                if (!allowQuickAccessHandoff && IsWindowOpenBlockedByGameForeground())
                 {
                     LogGameForegroundWindowBlock(styleKey, "UI dispatch");
                     return;
@@ -933,6 +941,9 @@ namespace AnikiHelper.Services
 
                         dispatcher.BeginInvoke(new Action(() =>
                         {
+                            global::AnikiHelper.AnikiLog.Debug(logger,
+                                $"[AnikiHelper][WindowManager] Quick Access handoff continuation authorized. Destination={styleKey}");
+
                             Open(
                                 styleKey,
                                 forceChild,
@@ -940,7 +951,8 @@ namespace AnikiHelper.Services
                                 focusFirst,
                                 refocusAfterClick,
                                 noDim,
-                                secondaryMusic);
+                                secondaryMusic,
+                                allowQuickAccessHandoff: true);
                         }), DispatcherPriority.ApplicationIdle);
 
                         return;
@@ -1094,8 +1106,30 @@ namespace AnikiHelper.Services
                         return;
                     }
 
+                    // Audio Switcher's nested ScrollViewer consumes Up/Down at the list
+                    // boundary before WPF can move focus back to the controls above it.
+                    // Handle navigation ourselves while focus is inside the output-device list.
+                    if (string.Equals(styleKey, AudioSwitcherWindowStyleName, StringComparison.OrdinalIgnoreCase) &&
+                        (e.Key == Key.Up || e.Key == Key.Down) &&
+                        HandleAudioSwitcherDeviceNavigation(window, e.Key))
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+
                     if (e.Key == Key.Escape || e.Key == Key.Back)
                     {
+                        // The Gamepad Tester must be allowed to see B/Back while one of its
+                        // live capture tests is running. Otherwise the WindowManager consumes
+                        // the same input as a global Cancel and closes the whole tester window.
+                        if (string.Equals(styleKey, GamepadTesterWindowStyleName, StringComparison.OrdinalIgnoreCase) &&
+                            IsGamepadTesterCaptureRunning(window))
+                        {
+                            global::AnikiHelper.AnikiLog.Debug(logger,
+                                "[AnikiHelper][WindowManager] Gamepad Tester capture active; forwarding Back/Escape to the tester.");
+                            return;
+                        }
+
                         if (HandleCancelRequest("Window.PreviewKeyDown"))
                         {
                             e.Handled = true;
@@ -1245,6 +1279,173 @@ namespace AnikiHelper.Services
             }
 
             return null;
+        }
+
+        private static bool HandleAudioSwitcherDeviceNavigation(Window window, Key key)
+        {
+            if (window == null)
+            {
+                return false;
+            }
+
+            var deviceList = FindVisualChildByName<ItemsControl>(window, "AudioSwitcherDeviceList");
+            if (deviceList == null)
+            {
+                return false;
+            }
+
+            var focusedObject = Keyboard.FocusedElement as DependencyObject;
+            if (focusedObject == null || !IsDescendantOf(focusedObject, deviceList))
+            {
+                return false;
+            }
+
+            var focusedElement = FindNearestFocusableElement(focusedObject);
+            if (focusedElement == null)
+            {
+                return false;
+            }
+
+            var deviceButtons = new List<FrameworkElement>();
+            CollectFocusableButtons(deviceList, deviceButtons);
+
+            var currentIndex = deviceButtons.FindIndex(button => ReferenceEquals(button, focusedElement));
+            if (currentIndex < 0)
+            {
+                return false;
+            }
+
+            FrameworkElement target = null;
+
+            if (key == Key.Up)
+            {
+                if (currentIndex > 0)
+                {
+                    target = deviceButtons[currentIndex - 1];
+                }
+                else
+                {
+                    // Leaving the first output device should return to the control directly
+                    // above the output section instead of being swallowed by ScrollViewer.
+                    target = FindVisualChildByName<FrameworkElement>(window, "AudioSwitcherMuteButton");
+                }
+            }
+            else if (key == Key.Down)
+            {
+                if (currentIndex < deviceButtons.Count - 1)
+                {
+                    target = deviceButtons[currentIndex + 1];
+                }
+                else
+                {
+                    // Output Devices is the last section on this page.
+                    // Consume Down at the final device so focus stays stable.
+                    return true;
+                }
+            }
+
+            if (target == null || !IsValidFocusableTarget(target))
+            {
+                return false;
+            }
+
+            target.Focus();
+            Keyboard.Focus(target);
+
+            var focusScope = FocusManager.GetFocusScope(target);
+            if (focusScope != null)
+            {
+                FocusManager.SetFocusedElement(focusScope, target);
+            }
+
+            target.BringIntoView();
+
+            target.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    target.BringIntoView();
+                }
+                catch
+                {
+                }
+            }), DispatcherPriority.Input);
+
+            return true;
+        }
+
+        private static void CollectFocusableButtons(DependencyObject parent, List<FrameworkElement> result)
+        {
+            if (parent == null || result == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+
+                if (child is ButtonBase button &&
+                    button.Focusable &&
+                    button.IsEnabled &&
+                    button.IsVisible &&
+                    button.IsTabStop)
+                {
+                    result.Add(button);
+                }
+
+                CollectFocusableButtons(child, result);
+            }
+        }
+
+        private static bool IsGamepadTesterCaptureRunning(Window window)
+        {
+            if (window == null)
+            {
+                return false;
+            }
+
+            return IsBooleanPropertyTrue(
+                       GetContentDataContext(FindVisualChildByName<ContentControl>(window, "GamepadTester_ButtonMap")),
+                       "IsButtonCaptureRunning") ||
+                   IsBooleanPropertyTrue(
+                       GetContentDataContext(FindVisualChildByName<ContentControl>(window, "GamepadTester_StickCheck")),
+                       "IsStickCaptureRunning") ||
+                   IsBooleanPropertyTrue(
+                       GetContentDataContext(FindVisualChildByName<ContentControl>(window, "GamepadTester_LatencyMini")),
+                       "IsLatencyTestRunning");
+        }
+
+        private static object GetContentDataContext(ContentControl control)
+        {
+            if (control?.Content is FrameworkElement contentElement)
+            {
+                return contentElement.DataContext;
+            }
+
+            return control?.DataContext;
+        }
+
+        private static bool IsBooleanPropertyTrue(object source, string propertyName)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return false;
+            }
+
+            try
+            {
+                var property = source.GetType().GetProperty(propertyName);
+
+                return property != null &&
+                       property.PropertyType == typeof(bool) &&
+                       property.GetValue(source, null) is bool value &&
+                       value;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void ApplyInitialFocus(Window window, string focusTargetName, bool focusFirst)

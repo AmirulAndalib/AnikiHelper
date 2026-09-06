@@ -100,6 +100,65 @@
         </Style>
 
         <!-- ==========================================================
+        COMMUNITY PACK BROWSE BUTTON
+        ========================================================== -->
+
+        <Style x:Key="AnikiCommunityPackBrowseButtonStyle"
+               TargetType="{x:Type pctrls:ButtonEx}">
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="MinWidth" Value="320"/>
+            <Setter Property="MaxWidth" Value="380"/>
+            <Setter Property="Padding" Value="18,0"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="#12FFFFFF"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MenuBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type pctrls:ButtonEx}">
+                        <Border x:Name="CommunityButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10"
+                                SnapsToDevicePixels="True">
+                            <Grid Margin="{TemplateBinding Padding}">
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Center"
+                                                  TextElement.FontSize="18"
+                                                  TextElement.FontWeight="SemiBold"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            </Grid>
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CommunityButtonBorder" Property="Background" Value="#20FFFFFF"/>
+                                <Setter TargetName="CommunityButtonBorder" Property="BorderBrush" Value="{DynamicResource TextHighlightBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="CommunityButtonBorder" Property="Background" Value="#2AFFFFFF"/>
+                                <Setter TargetName="CommunityButtonBorder" Property="BorderBrush" Value="{DynamicResource TextHighlightBrush}"/>
+                                <Setter TargetName="CommunityButtonBorder" Property="BorderThickness" Value="2"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="CommunityButtonBorder" Property="Background" Value="#38FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="CommunityButtonBorder" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ==========================================================
         VARIABLE / OPTION ITEM
         ========================================================== -->
 
@@ -190,6 +249,11 @@
 
                     <pctrls:CheckBoxEx Style="{DynamicResource AnikiThemeSettingsCheckBoxStyle}"
                                        IsChecked="{Binding CurrentBooleanValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                       Focusable="True"
+                                       IsTabStop="True"
+                                       KeyboardNavigation.IsTabStop="True"
+                                       KeyboardNavigation.TabNavigation="Continue"
+                                       KeyboardNavigation.DirectionalNavigation="Continue"
                                        HorizontalAlignment="Stretch"
                                        HorizontalContentAlignment="Stretch"
                                        VerticalContentAlignment="Center"
@@ -249,7 +313,7 @@
 
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="460"/>
+                        <ColumnDefinition Width="500"/>
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0"
@@ -261,35 +325,80 @@
                     </StackPanel>
 
                     <Grid Grid.Column="1"
+                          Width="460"
                           HorizontalAlignment="Right"
                           VerticalAlignment="Center"
                           Margin="0,0,35,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="402"/>
+                            <ColumnDefinition Width="58"/>
+                        </Grid.ColumnDefinitions>
 
-                        <StackPanel Orientation="Horizontal"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Center">
+                        <pctrls:SliderEx Grid.Column="0"
+                            Focusable="True"
+                            KeyboardNavigation.IsTabStop="True"
+                            Width="394"
+                            HorizontalAlignment="Left"
+                            Margin="0,0,8,0"
+                            Style="{DynamicResource AnikiThemeSettingsSliderStyle}"
+                            Minimum="{Binding Slider.MinValue, FallbackValue=0}"
+                            Maximum="{Binding Slider.MaxValue, FallbackValue=100}"
+                            SmallChange="{Binding Slider.SmallChangeValue, FallbackValue=1}"
+                            LargeChange="{Binding Slider.LargeChangeValue, FallbackValue=5}"
+                            TickFrequency="{Binding Slider.StepValue, FallbackValue=1}"
+                            Value="{Binding CurrentDoubleValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                            <pctrls:SliderEx
-                                Focusable="True"
-                                KeyboardNavigation.IsTabStop="True"
-                                Width="340"
-                                Margin="0,0,16,0"
-                                Style="{DynamicResource AnikiThemeSettingsSliderStyle}"
-                                Minimum="{Binding Slider.MinValue, FallbackValue=0}"
-                                Maximum="{Binding Slider.MaxValue, FallbackValue=100}"
-                                SmallChange="{Binding Slider.SmallChangeValue, FallbackValue=1}"
-                                LargeChange="{Binding Slider.LargeChangeValue, FallbackValue=5}"
-                                TickFrequency="{Binding Slider.StepValue, FallbackValue=1}"
-                                Value="{Binding CurrentDoubleValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-
-                            <TextBlock Text="{Binding CurrentDoubleValue, StringFormat={}{0:0.##}}"
-                                       Style="{DynamicResource AnikiThemeSettingsSectionTextStyle}"
-                                       VerticalAlignment="Center"
-                                       MinWidth="45"
-                                       TextAlignment="Left"
-                                       Margin="0,0,0,0"/>
-                        </StackPanel>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding CurrentDoubleValue, StringFormat={}{0:0.##}}"
+                                   Style="{DynamicResource AnikiThemeSettingsSectionTextStyle}"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Stretch"
+                                   TextAlignment="Center"
+                                   Margin="0"/>
                     </Grid>
+                </Grid>
+
+                <!-- CHOICE -->
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid"
+                               BasedOn="{StaticResource AnikiThemeSettingsOptionRowStyle}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Type}" Value="Choice">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Type}" Value="Enum">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="500"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0"
+                                VerticalAlignment="Center"
+                                Margin="0,0,30,0">
+                        <TextBlock Style="{StaticResource AnikiThemeSettingsOptionTitleStyle}"/>
+                        <TextBlock Style="{StaticResource AnikiThemeSettingsDependencyNoteStyle}"/>
+                        <TextBlock Style="{StaticResource AnikiThemeSettingsOptionDescriptionStyle}"/>
+                        <TextBlock Style="{StaticResource AnikiThemeSettingsRestartNoteStyle}"/>
+                    </StackPanel>
+
+                    <pctrls:ComboBoxEx Grid.Column="1"
+                                       Width="460"
+                                       Margin="0,7,35,7"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center"
+                                       Style="{DynamicResource AnikiThemeSettingsComboBoxStyle}"
+                                       ItemsSource="{Binding Choices}"
+                                       DisplayMemberPath="DisplayName"
+                                       SelectedValuePath="Value"
+                                       SelectedValue="{Binding CurrentStringValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                 </Grid>
 
                 <!-- STRING -->
@@ -333,8 +442,7 @@
                                      Command="{x:Static views:FullscreenSettingsView.AnikiThemeTextInputCommand}"
                                      CommandParameter="{Binding}">
 
-                        <Grid Width="410"
-                              Margin="24,0,24,0"
+                        <Grid Margin="0,0,24,0"
                               VerticalAlignment="Center">
 
                             <Grid.ColumnDefinitions>
@@ -371,26 +479,118 @@
         <DataTemplate DataType="{x:Type ats:AnikiPresetGroup}">
             <Grid Style="{StaticResource AnikiThemeSettingsOptionRowStyle}">
 
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="460"/>
+                    <ColumnDefinition Width="500"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0"
-                            VerticalAlignment="Center">
+                <StackPanel Grid.Row="0"
+                            Grid.Column="0"
+                            VerticalAlignment="Center"
+                            Margin="0,0,30,0">
                     <TextBlock Style="{StaticResource AnikiThemeSettingsOptionTitleStyle}"/>
                     <TextBlock Style="{StaticResource AnikiThemeSettingsDependencyNoteStyle}"/>
                     <TextBlock Style="{StaticResource AnikiThemeSettingsOptionDescriptionStyle}"/>
                     <TextBlock Style="{StaticResource AnikiThemeSettingsRestartNoteStyle}"/>
                 </StackPanel>
 
-                <pctrls:ComboBoxEx Grid.Column="1"
-                                   Style="{DynamicResource AnikiThemeSettingsComboBoxStyle}"
-                                   ItemsSource="{Binding Items}"
-                                   DisplayMemberPath="DisplayName"
-                                   SelectedValuePath="Key"
-                                   SelectedValue="{Binding SelectedPresetKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                   VerticalAlignment="Center"/>
+                <Grid Grid.Row="0"
+                      Grid.Column="1"
+                      Width="460"
+                      Margin="0,7,35,7"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center">
+                    <pctrls:ComboBoxEx Style="{DynamicResource AnikiThemeSettingsComboBoxStyle}"
+                                       ItemsSource="{Binding FilteredItems}"
+                                       DisplayMemberPath="DisplayName"
+                                       SelectedValuePath="Key"
+                                       SelectedValue="{Binding SelectedPresetKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                       IsEnabled="{Binding IsSelectionEnabled}"
+                                       Margin="0"
+                                       HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Center"/>
+
+                    <TextBlock Text="{Binding EmptySelectionText}"
+                               Margin="8,0,52,0"
+                               FontSize="24"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextBrush}"
+                               IsHitTestVisible="False">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasVisibleSelection}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsSelectionEnabled}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+
+                <Grid Grid.Row="1"
+                      Grid.Column="1"
+                      Width="460"
+                      Margin="0,0,35,10"
+                      HorizontalAlignment="Right">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Id}" Value="VisualPack">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Id}" Value="Interface">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Id}" Value="LoginBackground">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Id}" Value="SoundPack">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Id}" Value="CompletePack">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <pctrls:ButtonEx Command="{x:Static views:FullscreenSettingsView.OpenCommunityPacksCommand}"
+                                     CommandParameter="{Binding Id}">
+                        <pctrls:ButtonEx.Style>
+                            <Style TargetType="{x:Type pctrls:ButtonEx}"
+                                   BasedOn="{StaticResource AnikiCommunityPackBrowseButtonStyle}">
+                                <Setter Property="Content" Value="{DynamicResource CommunityPack_BrowseButton}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Id}" Value="VisualPack">
+                                        <Setter Property="Content" Value="{DynamicResource CommunityPack_VisualButton}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Id}" Value="Interface">
+                                        <Setter Property="Content" Value="{DynamicResource CommunityPack_ColorButton}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Id}" Value="LoginBackground">
+                                        <Setter Property="Content" Value="{DynamicResource CommunityPack_LoginButton}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Id}" Value="SoundPack">
+                                        <Setter Property="Content" Value="{DynamicResource CommunityPack_SoundButton}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Id}" Value="CompletePack">
+                                        <Setter Property="Content" Value="{DynamicResource CommunityPack_CompleteButton}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </pctrls:ButtonEx.Style>
+                    </pctrls:ButtonEx>
+                </Grid>
             </Grid>
         </DataTemplate>
 

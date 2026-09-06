@@ -174,8 +174,12 @@ namespace AnikiHelper.Services.ScreenSaver
                 return;
             }
 
-            var delayMinutes = Math.Max(1, Math.Min(120, settings?.ScreenSaverIdleDelayMinutes ?? 5));
-            if (DateTime.UtcNow - lastActivityUtc >= TimeSpan.FromMinutes(delayMinutes))
+            var delaySetting = settings?.ScreenSaverIdleDelayMinutes ?? 1;
+            var idleDelay = delaySetting < 0
+                ? TimeSpan.FromSeconds(Math.Abs(delaySetting))
+                : TimeSpan.FromMinutes(Math.Max(1, Math.Min(120, delaySetting)));
+
+            if (DateTime.UtcNow - lastActivityUtc >= idleDelay)
             {
                 StartShowcase(false);
             }
@@ -238,6 +242,7 @@ namespace AnikiHelper.Services.ScreenSaver
 
             try
             {
+                SetScreenSaverActive(true);
                 window.Show();
                 window.Activate();
                 window.Focus();
@@ -821,6 +826,7 @@ namespace AnikiHelper.Services.ScreenSaver
 
             window = null;
             previewMode = false;
+            SetScreenSaverActive(false);
             StopSlideTimer();
             Interlocked.Increment(ref slideLoadToken);
         }
@@ -838,12 +844,28 @@ namespace AnikiHelper.Services.ScreenSaver
             var currentWindow = window;
             window = null;
             previewMode = false;
+            SetScreenSaverActive(false);
 
             if (currentWindow != null)
             {
                 currentWindow.DismissRequested -= Window_DismissRequested;
                 currentWindow.Closed -= Window_Closed;
                 currentWindow.CloseImmediately();
+            }
+        }
+
+        private void SetScreenSaverActive(bool active)
+        {
+            try
+            {
+                if (settings != null)
+                {
+                    settings.IsScreenSaverActive = active;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.Warn(ex, "[AnikiHelper][ScreenSaver] Failed to update the ScreenSaver audio state.");
             }
         }
 

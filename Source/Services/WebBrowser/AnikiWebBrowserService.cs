@@ -56,6 +56,24 @@ namespace AnikiHelper.Services.WebBrowser
         private const int HomePointerThreshold = 6500;
         private const int FooterAutoHideDelayMs = 3000;
         private const int FooterActivityThrottleMs = 120;
+        private const long AutoCacheTrimThresholdBytes = 250L * 1024L * 1024L;
+
+        // WebView2/Chromium folders that contain rebuildable cache data.
+        // Deliberately exclude Cookies, Local Storage, IndexedDB, History,
+        // Login Data and other profile data so website sessions are preserved.
+        private static readonly string[] DisposableCacheDirectoryNames =
+        {
+            "Cache",
+            "Code Cache",
+            "GPUCache",
+            "CacheStorage",
+            "DawnCache",
+            "DawnGraphiteCache",
+            "GraphiteDawnCache",
+            "GrShaderCache",
+            "ShaderCache",
+            "Media Cache"
+        };
 
         private const string ControllerCompatibilityScript = @"
 (() => {
@@ -130,6 +148,7 @@ namespace AnikiHelper.Services.WebBrowser
         private readonly Func<IEnumerable<AnikiWebFavorite>> favoritesProvider;
         private readonly BrowserPointerController pointerController;
         private readonly string userDataFolder;
+        private readonly Task startupCacheCleanupTask;
 
         private Window windowHost;
         private Grid browserArea;
@@ -147,6 +166,9 @@ namespace AnikiHelper.Services.WebBrowser
         private string requestedTitle = string.Empty;
         private volatile bool browserWindowActive;
         private int controllerFocusRecoveryQueued;
+        private object browserGameController;
+        private bool browserControllerOverrideActive;
+        private bool browserPreviousStandardProcessingEnabled;
         private bool initializing;
         private bool closing;
         private bool disposed;
@@ -173,6 +195,11 @@ namespace AnikiHelper.Services.WebBrowser
             this.favoritesProvider = favoritesProvider;
             this.userDataFolder = ResolveUserDataFolder(api, userDataFolder);
             pointerController = new BrowserPointerController(logger, FooterHeight);
+
+            // Run the size check away from the UI thread. WebView initialization waits
+            // for this task before opening the profile, so cache files cannot be deleted
+            // while WebView2 is using them.
+            startupCacheCleanupTask = Task.Run((Action)TryAutoTrimWebViewCache);
         }
 
         public bool IsOpen
@@ -191,6 +218,16 @@ namespace AnikiHelper.Services.WebBrowser
             // keyboard owns focus) must not hand controller input back to Playnite,
             // otherwise the browser can become impossible to recover with a gamepad.
             get { return IsOpen && !closing; }
+        }
+
+        public bool IsHomeControllerNavigationActive
+        {
+            get
+            {
+                return IsControllerInputActive &&
+                       browserWindowActive &&
+                       viewMode == AnikiWebBrowserViewMode.Home;
+            }
         }
 
         public void OpenHome()
@@ -638,6 +675,10 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             viewMode = AnikiWebBrowserViewMode.Home;
+            // Home/favorites uses Aniki's own D-Pad/left-stick focus navigation. Disable
+            // Playnite's native fullscreen controller navigation while this view owns focus,
+            // otherwise one physical D-Pad press can move two favorite cards.
+            AcquireExclusiveControllerProcessing();
             requestedTitle = string.Empty;
             pendingAddress = string.Empty;
             ResetHomeStickState();
@@ -683,6 +724,10 @@ namespace AnikiHelper.Services.WebBrowser
             pendingAddress = normalizedAddress;
             requestedTitle = title ?? string.Empty;
             viewMode = AnikiWebBrowserViewMode.Web;
+            // Keep exclusive Aniki controller routing while the browser is visible.
+            // Releasing it when switching from Home to Web can cause controller input
+            // to be lost as soon as WebView2 takes focus.
+            AcquireExclusiveControllerProcessing();
             ResetHomeStickState();
             homePointerMode = false;
 
@@ -776,6 +821,7 @@ namespace AnikiHelper.Services.WebBrowser
             Window expectedHost,
             WebView2CompositionControl expectedView)
         {
+            await WaitForStartupCacheCleanupAsync();
             Directory.CreateDirectory(userDataFolder);
 
             var localEnvironment = environment;
@@ -1591,6 +1637,7 @@ namespace AnikiHelper.Services.WebBrowser
         private void WindowHost_Activated(object sender, EventArgs e)
         {
             browserWindowActive = true;
+            AcquireExclusiveControllerProcessing();
             Interlocked.Exchange(ref controllerFocusRecoveryQueued, 0);
             global::AnikiHelper.AnikiLog.Debug(logger, 
                 $"[AnikiHelper][WebBrowser][Focus] Activated | Visible={IsOpen}, HostActive={windowHost?.IsActive == true}, Mode={viewMode}, WebViewFocusWithin={webView?.IsKeyboardFocusWithin == true}.");
@@ -1616,6 +1663,9 @@ namespace AnikiHelper.Services.WebBrowser
         private void WindowHost_Deactivated(object sender, EventArgs e)
         {
             browserWindowActive = false;
+            // Let a native dialog or virtual keyboard that takes focus use Playnite's normal
+            // controller routing. Home will reacquire exclusivity when the browser activates.
+            ReleaseExclusiveControllerProcessing();
             pointerController.SuspendInput();
             global::AnikiHelper.AnikiLog.Debug(logger, 
                 $"[AnikiHelper][WebBrowser][Focus] Deactivated | Visible={IsOpen}, HostActive={windowHost?.IsActive == true}, Mode={viewMode}, WebViewFocusWithin={webView?.IsKeyboardFocusWithin == true}. Controller ownership retained while the browser remains visible.");
@@ -1930,6 +1980,7 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             pointerController.EndSession();
+            ReleaseExclusiveControllerProcessing();
 
             if (host != null)
             {
@@ -1980,6 +2031,106 @@ namespace AnikiHelper.Services.WebBrowser
             DebugLog("[AnikiHelper][WebBrowser] Closed and WebView2 resources released.");
         }
 
+        private void AcquireExclusiveControllerProcessing()
+        {
+            try
+            {
+                var mainWindow = Application.Current?.MainWindow;
+                var model = mainWindow?.DataContext;
+                if (model == null)
+                {
+                    return;
+                }
+
+                var appProperty = model.GetType().GetProperty("App");
+                var app = appProperty?.GetValue(model, null);
+                if (app == null)
+                {
+                    return;
+                }
+
+                var gameControllerProperty = app.GetType().GetProperty("GameController");
+                var gameController = gameControllerProperty?.GetValue(app, null);
+                if (gameController == null)
+                {
+                    return;
+                }
+
+                var standardProcessingProperty = gameController.GetType().GetProperty("StandardProcessingEnabled");
+                if (standardProcessingProperty == null ||
+                    !standardProcessingProperty.CanRead ||
+                    !standardProcessingProperty.CanWrite)
+                {
+                    return;
+                }
+
+                if (!browserControllerOverrideActive ||
+                    !ReferenceEquals(browserGameController, gameController))
+                {
+                    var current = standardProcessingProperty.GetValue(gameController, null);
+                    browserPreviousStandardProcessingEnabled = current is bool enabled && enabled;
+                    browserGameController = gameController;
+                    browserControllerOverrideActive = true;
+
+                    DebugLog(
+                        $"[AnikiHelper][WebBrowser][Controller] Exclusive browser routing acquired. " +
+                        $"PreviousStandardProcessing={browserPreviousStandardProcessingEnabled}.");
+                }
+
+                // Re-assert on activation because other native-window guards can restore
+                // Playnite processing while focus moves between WPF windows.
+                standardProcessingProperty.SetValue(gameController, false, null);
+            }
+            catch (Exception ex)
+            {
+                global::AnikiHelper.AnikiLog.Debug(
+                    logger,
+                    ex,
+                    "[AnikiHelper][WebBrowser][Controller] Failed to acquire exclusive browser controller routing.");
+            }
+        }
+
+        private void ReleaseExclusiveControllerProcessing()
+        {
+            if (!browserControllerOverrideActive)
+            {
+                return;
+            }
+
+            var gameController = browserGameController;
+            var previous = browserPreviousStandardProcessingEnabled;
+
+            browserControllerOverrideActive = false;
+            browserGameController = null;
+            browserPreviousStandardProcessingEnabled = false;
+
+            if (gameController == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var standardProcessingProperty = gameController.GetType().GetProperty("StandardProcessingEnabled");
+                if (standardProcessingProperty == null || !standardProcessingProperty.CanWrite)
+                {
+                    return;
+                }
+
+                standardProcessingProperty.SetValue(gameController, previous, null);
+                DebugLog(
+                    $"[AnikiHelper][WebBrowser][Controller] Exclusive browser routing released. " +
+                    $"RestoredStandardProcessing={previous}.");
+            }
+            catch (Exception ex)
+            {
+                global::AnikiHelper.AnikiLog.Debug(
+                    logger,
+                    ex,
+                    "[AnikiHelper][WebBrowser][Controller] Failed to restore Playnite controller routing.");
+            }
+        }
+
         private bool IsCurrentSession(int generation, Window expectedHost, WebView2CompositionControl expectedView)
         {
             return !disposed &&
@@ -1998,6 +2149,8 @@ namespace AnikiHelper.Services.WebBrowser
 
             return InvokeOnUiAsync(async delegate
             {
+                await WaitForStartupCacheCleanupAsync();
+
                 if (IsOpen)
                 {
                     CloseCore();
@@ -2200,6 +2353,245 @@ namespace AnikiHelper.Services.WebBrowser
             }
 
             return null;
+        }
+
+        private async Task WaitForStartupCacheCleanupAsync()
+        {
+            var cleanupTask = startupCacheCleanupTask;
+            if (cleanupTask == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await cleanupTask;
+            }
+            catch (Exception ex)
+            {
+                // Cache maintenance must never prevent the browser from opening.
+                logger?.Warn(ex, "[AnikiHelper][WebBrowser][AutoCache] Startup cache cleanup failed.");
+            }
+        }
+
+        private void TryAutoTrimWebViewCache()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(userDataFolder) || !Directory.Exists(userDataFolder))
+                {
+                    return;
+                }
+
+                var cacheDirectories = FindDisposableCacheDirectories(userDataFolder);
+                if (cacheDirectories.Count == 0)
+                {
+                    return;
+                }
+
+                long totalCacheBytes = 0;
+                foreach (var directory in cacheDirectories)
+                {
+                    totalCacheBytes += GetDirectorySizeSafe(directory);
+                }
+
+                if (totalCacheBytes < AutoCacheTrimThresholdBytes)
+                {
+                    DebugLog(
+                        string.Format(
+                            "[AnikiHelper][WebBrowser][AutoCache] Cache size {0}; below automatic cleanup threshold {1}.",
+                            FormatByteSize(totalCacheBytes),
+                            FormatByteSize(AutoCacheTrimThresholdBytes)));
+                    return;
+                }
+
+                logger?.Info(
+                    string.Format(
+                        "[AnikiHelper][WebBrowser][AutoCache] Cache reached {0}; automatic cleanup started. Threshold={1}, Folders={2}.",
+                        FormatByteSize(totalCacheBytes),
+                        FormatByteSize(AutoCacheTrimThresholdBytes),
+                        cacheDirectories.Count));
+
+                long removedBytes = 0;
+                int removedDirectories = 0;
+                foreach (var directory in cacheDirectories)
+                {
+                    var directoryBytes = GetDirectorySizeSafe(directory);
+                    try
+                    {
+                        Directory.Delete(directory, true);
+                        removedBytes += directoryBytes;
+                        removedDirectories++;
+                    }
+                    catch (DirectoryNotFoundException)
+                    {
+                        // Already gone; treat as successfully reclaimed.
+                        removedBytes += directoryBytes;
+                        removedDirectories++;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.Warn(
+                            ex,
+                            "[AnikiHelper][WebBrowser][AutoCache] Could not remove disposable cache folder: " + directory);
+                    }
+                }
+
+                logger?.Info(
+                    string.Format(
+                        "[AnikiHelper][WebBrowser][AutoCache] Automatic cleanup completed. Removed={0}, Folders={1}/{2}. Cookies, sessions and site storage were preserved.",
+                        FormatByteSize(removedBytes),
+                        removedDirectories,
+                        cacheDirectories.Count));
+            }
+            catch (Exception ex)
+            {
+                // Fail open: browser startup must continue even if maintenance cannot run.
+                logger?.Warn(ex, "[AnikiHelper][WebBrowser][AutoCache] Automatic cache cleanup failed.");
+            }
+        }
+
+        private static List<string> FindDisposableCacheDirectories(string rootPath)
+        {
+            var result = new List<string>();
+            var pending = new Stack<string>();
+            pending.Push(rootPath);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+                IEnumerable<string> children;
+
+                try
+                {
+                    children = Directory.EnumerateDirectories(current).ToList();
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var child in children)
+                {
+                    string name;
+                    try
+                    {
+                        name = Path.GetFileName(child);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (IsDisposableCacheDirectoryName(name))
+                    {
+                        // Do not walk inside a matched cache directory. This avoids
+                        // counting/deleting nested cache folders more than once.
+                        result.Add(child);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var attributes = File.GetAttributes(child);
+                        if ((attributes & FileAttributes.ReparsePoint) != 0)
+                        {
+                            continue;
+                        }
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    pending.Push(child);
+                }
+            }
+
+            return result;
+        }
+
+        private static bool IsDisposableCacheDirectoryName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            foreach (var candidate in DisposableCacheDirectoryNames)
+            {
+                if (string.Equals(name, candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static long GetDirectorySizeSafe(string rootPath)
+        {
+            long total = 0;
+            var pending = new Stack<string>();
+            pending.Push(rootPath);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(current))
+                    {
+                        try
+                        {
+                            total += new FileInfo(file).Length;
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    foreach (var child in Directory.EnumerateDirectories(current))
+                    {
+                        try
+                        {
+                            var attributes = File.GetAttributes(child);
+                            if ((attributes & FileAttributes.ReparsePoint) == 0)
+                            {
+                                pending.Push(child);
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return total;
+        }
+
+        private static string FormatByteSize(long bytes)
+        {
+            const double mb = 1024.0 * 1024.0;
+            const double gb = 1024.0 * 1024.0 * 1024.0;
+
+            if (bytes >= gb)
+            {
+                return (bytes / gb).ToString("0.00") + " GB";
+            }
+
+            return (bytes / mb).ToString("0.0") + " MB";
         }
 
         private static string ResolveUserDataFolder(IPlayniteAPI api, string requestedFolder)
